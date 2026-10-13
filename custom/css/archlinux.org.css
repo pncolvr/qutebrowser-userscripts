@@ -1,0 +1,23 @@
+div#archnavbar {
+    min-height:20px !important;
+    height: 20px !important;
+}
+
+/* div#archnavbarlogo, */
+div#archnavbarlogo,
+div#archnavbar > div#logo {
+    display: none!important;
+}
+
+#archnavbar,
+#archnavbarmenu {
+    padding:0!important;
+    border-bottom: none !important;
+}
+
+#archnavbar ul li,
+#archnavbarmenu ul li {
+    line-height: 20px !important;
+    padding-top:0!important;
+    padding-bottom:0!important;
+}

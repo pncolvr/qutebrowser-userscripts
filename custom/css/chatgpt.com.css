@@ -1,0 +1,6 @@
+/* hide elements that I dont use */
+
+/* #stage-slideover-sidebar,
+div[data-testid="thread-header-right-actions"]{
+    display:none;
+} */

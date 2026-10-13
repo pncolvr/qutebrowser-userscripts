@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+script_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+url=${1:-${QUTE_URL:-}}
+[[ -n $url ]] || { printf 'Usage: certificate [URL]\n' >&2; exit 2; }
+exec ghostty -e "$script_root/lib/hold.sh" "$script_root/lib/certificate.sh" "$url"

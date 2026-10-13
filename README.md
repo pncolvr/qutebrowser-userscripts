@@ -6,6 +6,12 @@ by name in `~/.local/share/qutebrowser/userscripts`.
 | Script | Purpose |
 | --- | --- |
 | `readability-js` | Run the packaged Mozilla reader with generated HTML in private session storage. |
+| `clean_url` / `select_urls` | Copy cleaned page/link URLs or selected saved tabs. |
+| `certificate` / `download` | Show the TLS certificate or download a video in Ghostty. |
+| `mono` / `unlockinsta` / `home` | Run page JavaScript actions. |
+| `darkreader` | Toggle Dark Reader for a domain. |
+| `apply_custom` | Install custom CSS/JavaScript, then reload Greasemonkey and the page. |
+| `cookie-cleaner.sh` | Interactively remove cookies from a closed browser profile. |
 | `to_mpv` | Play the current or hinted Twitch/YouTube URL in mpv with the existing window and chat integration. |
 
 Use `:spawn --userscript to_mpv` for the current page or
@@ -30,6 +36,7 @@ Run the userscript checks with:
 ```sh
 bash tests/to_mpv.sh
 bash tests/readability-js.sh
+bash tests/userscripts.sh
 ```
 
 The media checks mock desktop commands. Reader checks use private sample HTML
@@ -38,3 +45,17 @@ not play media, open browser tabs, or change window focus.
 
 Generated `/readability.html` is ignored by Git as a fallback for direct calls to
 the packaged readers. An already tracked copy must also be removed from the index.
+
+## Layout
+
+Root executables are launched by name with `spawn --userscript`. `lib/` contains
+shared shell helpers, `js/` contains page actions, and `custom/` contains site
+CSS and Greasemonkey scripts. The browser config keeps the global scrollbar CSS.
+The custom installers update the main, webapp and Twitch-chat profiles. Editor
+tasks for rebuilding them live in this repository. `apply_custom` also links the
+shared userscripts into each profile's `data/userscripts` directory when absent,
+so bindings by name work with their separate `--basedir` directories.
+
+URL selection uses the existing Quickshell picker and `yq`/`jq`. Certificate
+inspection needs OpenSSL; downloads use yt-dlp. Cookie cleanup uses fzf/sqlite3
+and must be run after closing qutebrowser. `cookie-jar` in Zsh calls it here.

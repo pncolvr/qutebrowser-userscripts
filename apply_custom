@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+script_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+profile_root="${XDG_DATA_HOME:-$HOME/.local/share}"
+for profile in qutebrowser-webapp qutebrowser-twitch-chat; do
+    target="$profile_root/$profile/data/userscripts"
+    if [[ ! -e $target && ! -L $target ]]; then
+        mkdir -p -- "${target%/*}"
+        ln -s -- "$script_root" "$target"
+    fi
+done
+"$script_root/lib/css-apply.sh"
+"$script_root/lib/js-apply.sh"
+if [[ -n ${QUTE_FIFO:-} ]]; then
+    printf 'greasemonkey-reload\nreload\n' > "$QUTE_FIFO"
+fi

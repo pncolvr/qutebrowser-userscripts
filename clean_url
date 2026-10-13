@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+WORKSPACE=$(dirname "${BASH_SOURCE[0]:-0}")
+source "$WORKSPACE/lib/url.sh"
+
+clean_url=$(clean "${1:-${QUTE_URL:-}}")
+wl-copy "$clean_url"
+
+update "$clean_url copied"

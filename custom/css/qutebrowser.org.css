@@ -1,0 +1,16 @@
+div#headline {
+    padding:2px!important;
+}
+
+img.qutebrowser-logo {
+    height: 20px!important;
+}
+
+span.heading-text {
+    display:inline!important;
+    font-size: 12px!important;
+}
+
+.text {
+    font-size: 10px!important;
+}

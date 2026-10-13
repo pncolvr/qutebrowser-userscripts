@@ -1,0 +1,34 @@
+div.side-nav {
+  width: 0px;
+  transition: width 180ms ease-in-out;
+}
+
+div.side-nav:hover {
+  width: 232px
+}
+
+nav.top-nav:has(a.tw-link:hover) ~ div div.side-nav {
+  width: 232px
+}
+
+/* #root div.stream-chat > div.stream-chat-header,
+#root div.chat-room__content > div.tw-transition,
+.community-points-summary {
+    display: none!important;
+} */
+
+/* #root div.ekYTef {
+    display:inline-flex!important;
+    width: 70vw!important;
+    vertical-align: top !important;
+}
+
+#root div.chat-input__buttons-container {
+    display:inline-flex!important;
+    width: 10vw!important;
+    justify-content:unset!important;
+}
+
+#root div.ekYTef > div.csHFVr {
+    width: 100%!important;
+} */

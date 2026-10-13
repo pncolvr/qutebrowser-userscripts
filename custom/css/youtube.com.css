@@ -1,0 +1,7 @@
+ytd-rich-shelf-renderer[is-shorts],
+ytd-reel-shelf-renderer,
+a[aria-label="Shorts"],
+a[title="Shorts"],
+#contents .ytd-rich-grid-renderer:has(.ytd-in-feed-ad-layout-renderer) {
+  display: none !important;
+}

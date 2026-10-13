@@ -1,0 +1,16 @@
+shreddit-ad-post,
+shreddit-comments-page-ad,
+#left-sidebar-container,
+#subgrid-container > div.masthead.w-full,
+.pe-lg.flex.gap-xs.items-center.justify-start {
+    display:none !important;
+}
+
+header.v2.bg-neutral-background.pointer-events-auto.border-solid.border-0.border-b.border-neutral-border.px-md {
+    height: 0;
+    border: none;
+}
+
+body > shreddit-app > reddit-header-large > reddit-header-action-items > header > nav > div.flex-1.py-xs.flex.justify-stretch > div > div {
+    margin-left: 20px;
+}
