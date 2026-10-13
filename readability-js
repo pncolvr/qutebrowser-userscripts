@@ -6,7 +6,30 @@ umask 077
 reader_dir="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is required}/qutebrowser-readability"
 mkdir -p -- "$reader_dir"
 
-exec env \
+# The packaged script dereferences parse() even when no article was found.
+# Add a null guard to a private copy; keep its rendering and the package intact.
+reader_script=$(mktemp "$reader_dir/.readability-js.XXXXXXXX.js")
+trap 'rm -f -- "$reader_script"' EXIT
+awk '
+    /let article = reader\.parse\(\);/ {
+        print
+        print "    if (!article) {"
+        print "        qute.messageInfo([\047\"No readable article could be extracted from this page.\"\047]);"
+        print "        return;"
+        print "    }"
+        patched = 1
+        next
+    }
+    { print }
+    END {
+        if (!patched) {
+            print "The packaged reader changed; update its no-article guard." > "/dev/stderr"
+            exit 1
+        }
+    }
+' /usr/share/qutebrowser/userscripts/readability-js > "$reader_script"
+
+env \
     QUTE_DATA_DIR="$reader_dir" \
     NODE_PATH="$HOME/.local/share/qutebrowser/readability-js/node_modules${NODE_PATH:+:$NODE_PATH}" \
-    /usr/share/qutebrowser/userscripts/readability-js "$@"
+    node "$reader_script" "$@"
