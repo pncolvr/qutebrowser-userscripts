@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Run the packaged reader with rendered articles in private session storage.
+set -euo pipefail
+umask 077
+
+reader_dir="${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is required}/qutebrowser-readability"
+mkdir -p -- "$reader_dir"
+
+exec env \
+    QUTE_DATA_DIR="$reader_dir" \
+    NODE_PATH="$HOME/.local/share/qutebrowser/readability-js/node_modules${NODE_PATH:+:$NODE_PATH}" \
+    /usr/share/qutebrowser/userscripts/readability-js "$@"
