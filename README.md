@@ -13,6 +13,7 @@ by name in `~/.local/share/qutebrowser/userscripts`.
 | `apply_custom` | Install custom CSS/JavaScript, then reload Greasemonkey and the page. |
 | `cookie-cleaner.sh` | Interactively remove cookies from a closed browser profile. |
 | `to_mpv` | Play the current or hinted Twitch/YouTube URL in mpv with the existing window and chat integration. |
+| `qute-rbw` | Private rbw helper for the browser-owned `>bw` credential operation. |
 
 Use `:spawn --userscript to_mpv` for the current page or
 `:hint links userscript to_mpv` to choose a link. It also accepts a URL argument
@@ -59,3 +60,28 @@ so bindings by name work with their separate `--basedir` directories.
 URL selection uses the existing Quickshell picker and `yq`/`jq`. Certificate
 inspection needs OpenSSL; downloads use yt-dlp. Cookie cleanup uses fzf/sqlite3
 and must be run after closing qutebrowser. `cookie-jar` in Zsh calls it here.
+
+## rbw autofill
+
+Focus a login field and press `>bw`, or use `:rbw-fill` in qutebrowser. The
+browser captures the original tab/document, starts `qute-rbw`, and always asks
+you to confirm an entry and destination in Quickshell. The helper supports rbw
+1.15.x; it does not handle the master password or cache unlock tokens. rbw's
+agent and the Quickshell pinentry adapter own unlocking.
+
+Only the selected entry is retrieved. UUID, URI matching and the encrypted
+cache's master-password-reprompt flag are checked before credentials are served
+once over a private socket. Browser commands carry a handle, never credentials.
+Do not invoke `qute-rbw` directly with `spawn --userscript`: the browser command
+must own the pending operation. Username/password/TOTP-only modes use
+`:rbw-fill username`, `:rbw-fill password` and `:rbw-fill totp`.
+
+Setup, compatibility limits and every new cross-repository test are in
+`~/.config/quickshell/docs/features/rbw.md` and `tests/security/rbw/` in the
+Quickshell repository. Protected/unknown entries, regex-only matching rules,
+unsupported forms/frames and line breaks in credentials are refused. No form is
+submitted and no credential is copied to the clipboard automatically.
+
+An unfocused or unsupported field produces a focus message. Launcher startup or
+reply failures produce `rbw: entry picker unavailable; check Quickshell.`;
+`rbw: cancelled.` indicates cancellation rather than a launcher command failure.
