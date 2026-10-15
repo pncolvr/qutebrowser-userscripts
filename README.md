@@ -66,7 +66,9 @@ and must be run after closing qutebrowser. `cookie-jar` in Zsh calls it here.
 Focus a login field and press `>bw`, or use `:rbw-fill` in qutebrowser. The
 browser captures the original tab/document, starts `qute-rbw`, and always asks
 you to confirm an entry and destination in Quickshell. The entry picker preserves
-the pointer position so the browser interaction can resume where it started. The helper supports rbw
+the pointer position so the browser interaction can resume where it started.
+This is shared launcher behavior; the client sends no pointer-specific option.
+The helper supports rbw
 1.15.x; it does not handle the master password or cache unlock tokens. rbw's
 agent and the Quickshell pinentry adapter own unlocking.
 

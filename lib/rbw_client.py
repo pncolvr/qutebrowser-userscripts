@@ -204,7 +204,7 @@ def select_entry(items, target):
     # Metadata only; the existing bridge requires a JSON request file.
     with tempfile.TemporaryDirectory(prefix="rbw-menu.", dir=os.environ["QUTERBW_DIRECTORY"]) as directory:
         request = Path(directory) / "request.json"
-        request.write_text(json.dumps({"prompt": "Fill login on " + host_port(target)[1], "showPrompt": True, "private": True, "movePointer": False,
+        request.write_text(json.dumps({"prompt": "Fill login on " + host_port(target)[1], "showPrompt": True, "private": True,
                                        "acceptLabel": "Fill", "allowTyped": False, "items": items}), encoding="utf-8")
         process = subprocess.run([str(picker), "--json", str(request)], stdout=subprocess.PIPE,
                                  stderr=subprocess.DEVNULL, timeout=240)
