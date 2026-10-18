@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 # Browser integration; no Quickshell launcher or repository helpers are required.
-ZDOTDIR=${ZDOTDIR:-$HOME/.config/zsh}
 
 function log() { _internal_log 7 "$@"; }
 function log_error() { _internal_log 4 "$@"; }
@@ -70,7 +69,12 @@ function handle_close_source() {
 function handle_open_twitch() {
     local chat_url
     chat_url="https://www.twitch.tv/popout/$(get_channel "$1")/chat?popout="
-    "$ZDOTDIR"/scripts/default-browser/default-browser.sh "qutebrowser-twitch-chat" "$chat_url"
+    qutebrowser --desktop-file-name qutebrowser-twitch-chat \
+        --target window \
+        -C "$HOME/.config/qutebrowser/config.py" \
+        -B "$HOME/.local/share/qutebrowser-twitch-chat" \
+        "$chat_url" >/dev/null 2>&1 &
+    disown
 }
 
 function handle_close_twitch() {

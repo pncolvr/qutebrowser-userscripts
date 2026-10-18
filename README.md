@@ -18,8 +18,8 @@ by name in `~/.local/share/qutebrowser/userscripts`.
 Use `:spawn --userscript to_mpv` for the current page or
 `:hint links userscript to_mpv` to choose a link. It also accepts a URL argument
 when run from a terminal. Dependencies are `mpv`, its video extractor, `playerctl`,
-`hyprctl`, `jq`, and `logger`. Twitch chat uses
-`${ZDOTDIR:-$HOME/.config/zsh}/scripts/default-browser/default-browser.sh`.
+`hyprctl`, `jq`, and `logger`. Twitch chat opens directly in qutebrowser using
+the dedicated `qutebrowser-twitch-chat` profile.
 
 The `readability-js` wrapper redirects generated articles outside this repository.
 The `,rr` binding calls this wrapper by name. Use `readability-js` rather than an
