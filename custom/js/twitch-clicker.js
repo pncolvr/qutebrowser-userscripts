@@ -12,7 +12,7 @@
 
 let MutationObserver = window.MutationObserver || window.WebKitMutationObserver || window.MozMutationObserver;
 let claiming = false;
-if (MutationObserver) console.log('Auto claimer is enabled.');
+if (MutationObserver) console.info('[Twitch Channel Points] Enabled — watching for claimable bonuses.');
 let observer = new MutationObserver(e => {
     let bonus = document.querySelector('.claimable-bonus__icon');
     if (bonus && !claiming) {

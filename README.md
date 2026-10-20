@@ -38,6 +38,7 @@ Run the userscript checks with:
 bash tests/to_mpv.sh
 bash tests/readability-js.sh
 bash tests/userscripts.sh
+node tests/twitch-ads.cjs
 ```
 
 The media checks mock desktop commands. Reader checks use private sample HTML
@@ -46,6 +47,57 @@ not play media, open browser tabs, or change window focus.
 
 Generated `/readability.html` is ignored by Git as a fallback for direct calls to
 the packaged readers. An already tracked copy must also be removed from the index.
+
+## Preview the Twitch ad badge
+
+With the Twitch userscript enabled and a stream playing normally, open the
+developer console (`:devtools`) and paste this snippet. Change `seconds` to choose
+the duration. It simulates the ad mini-player that the userscript detects, so the
+stream is temporarily muted and the real badge appears. No ad is downloaded.
+When the timer ends, the userscript hides the badge and restores your previous
+mute state and volume on its next poll (within about 500 ms).
+
+```js
+(() => {
+  const seconds = 10;
+  const id = 'qute-twitch-ad-preview';
+  const mainVideo = document.querySelector('div.video-ref video');
+  const currentAd = document.querySelector('div.picture-by-picture-player');
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    throw new Error('Choose a positive number of seconds.');
+  }
+  if (document.getElementById(id)) {
+    throw new Error('An ad preview is already running.');
+  }
+  if (!mainVideo) {
+    throw new Error('Wait for the Twitch player to finish loading.');
+  }
+  if (currentAd && !currentAd.classList.contains('picture-by-picture-player--collapsed')) {
+    throw new Error('Wait for the current ad to finish.');
+  }
+
+  const preview = document.createElement('div');
+  preview.id = id;
+  preview.className = 'picture-by-picture-player';
+  preview.hidden = true;
+  const miniVideo = document.createElement('video');
+  miniVideo.hidden = true;
+  preview.appendChild(miniVideo);
+  document.body.prepend(preview);
+  console.info(`[Twitch Ads Preview] Entering ad mode for ${seconds} seconds.`);
+
+  setTimeout(() => {
+    preview.remove();
+    miniVideo.remove();
+    console.info('[Twitch Ads Preview] Exiting ad mode; audio will restore on the next poll.');
+  }, seconds * 1000);
+})();
+```
+
+Run it once with audio enabled and once with audio already muted to check both
+restoration cases. Keep the stream open until the preview finishes. If a real ad
+starts during the preview, ad mode continues until that ad ends.
+After each preview, check that play/pause, mute and the volume slider still work.
 
 ## Layout
 

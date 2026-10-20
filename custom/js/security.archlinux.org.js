@@ -10,6 +10,8 @@
 // ==/UserScript==
 
 (function() {
+    console.info('[Arch Linux Security] Enabled — applying compact navigation styles.');
+
     function setImportantStyles(selector, styles) {
         document.querySelectorAll(selector).forEach((element) => {
             Object.entries(styles).forEach(([property, value]) => {

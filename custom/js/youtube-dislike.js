@@ -23,6 +23,8 @@
 // @updateURL https://update.greasyfork.org/scripts/436115/Return%20YouTube%20Dislike.meta.js
 // ==/UserScript==
 
+console.info('[Return YouTube Dislike] Enabled — restoring dislike counts.');
+
 const extConfig = {
   // BEGIN USER OPTIONS
   // You may change the following variables to allowed values listed in the corresponding brackets (* means default). Keep the style and keywords intact.

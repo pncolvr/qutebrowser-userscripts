@@ -9,6 +9,8 @@
 // @run-at       document-end
 // ==/UserScript==
 
+console.info('[YouTube] Enabled — cinema mode, timestamps and ad muting.');
+
 if (document.cookie.indexOf("wide=1") === -1) {
     document.cookie="wide=1;domain=.youtube.com"
     location.reload();

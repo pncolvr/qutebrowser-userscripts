@@ -44,7 +44,7 @@
         'standard download',
     ]);
 
-    log('loaded on', location.href);
+    console.info(TAG, 'Enabled — watching for download buttons.');
 
     // The download modal (#upsell-cards) is rendered inside a web component's
     // open shadow DOM, which document.querySelectorAll does NOT cross. Walk the

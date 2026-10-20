@@ -8,6 +8,8 @@
 (() => {
   'use strict';
 
+  console.info('[YouTube Embed to Link] Enabled — watching for embedded videos.');
+
   const youtubeId = src => {
     try {
       const url = new URL(src);

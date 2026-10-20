@@ -10,6 +10,8 @@
 (() => {
     'use strict';
 
+    console.info('[Scrollbars] Enabled — showing scrollbar thumbs while scrolling.');
+
     const idleDelay = 800;
     const timers = new WeakMap();
 

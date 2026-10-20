@@ -8,6 +8,8 @@
 // @grant none
 // ==/UserScript==
 
+console.info("[ChatGPT Login Dismiss] Loaded — automation is disabled.");
+
 // 
 
 // function waitForDialog() {
