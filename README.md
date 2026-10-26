@@ -103,7 +103,7 @@ After each preview, check that play/pause, mute and the volume slider still work
 
 Root executables are launched by name with `spawn --userscript`. `lib/` contains
 shared shell helpers, `js/` contains page actions, and `custom/` contains site
-CSS and Greasemonkey scripts. The browser config keeps the global scrollbar CSS.
+CSS and Greasemonkey scripts.
 The custom installers update the main, webapp and Twitch-chat profiles. Editor
 tasks for rebuilding them live in this repository. `apply_custom` also links the
 shared userscripts into each profile's `data/userscripts` directory when absent,

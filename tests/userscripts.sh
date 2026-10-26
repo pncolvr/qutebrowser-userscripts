@@ -99,7 +99,6 @@ printf 'PASS: Dark Reader toggles generated scripts in the active profile\n'
 : > "$QUTE_FIFO"
 "$script_root/apply_custom" > "$test_dir/generation"
 [[ $(cat "$QUTE_FIFO") == $'greasemonkey-reload\nreload' ]]
-[[ ! -e $QUTE_CONFIG_DIR/greasemonkey/_g.css.scrollbars.js ]]
 for source in "$script_root"/custom/css/*.css; do
     name=${source##*/}; name=${name%.css}
     [[ -f $QUTE_CONFIG_DIR/greasemonkey/_g.css.$name.js ]]
@@ -114,4 +113,4 @@ done
 for profile in qutebrowser-webapp qutebrowser-twitch-chat; do
     [[ $(readlink -f "$XDG_DATA_HOME/$profile/data/userscripts") == "$script_root" ]]
 done
-printf 'PASS: custom assets install into all profiles before reload, while global CSS stays in config\n'
+printf 'PASS: custom assets install into all profiles before reload\n'

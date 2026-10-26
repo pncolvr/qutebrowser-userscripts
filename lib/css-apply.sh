@@ -11,8 +11,6 @@ mkdir -p -- "$config_root/greasemonkey" \
 rm -f "$config_root/greasemonkey"/_g.css.*.js
 for f in "$SRC_DIR"/*.css; do
   [ -f "$f" ] || continue
-  # The global scrollbar stylesheet stays in the browser config.
-  [ "${f##*/}" = "scrollbars.css" ] && continue
   name="$(basename "${f%.css}")"
   out_name="_g.css.$name.js"
   out="$config_root/greasemonkey/$out_name"
