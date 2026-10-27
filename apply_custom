@@ -2,7 +2,7 @@
 set -euo pipefail
 script_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 profile_root="${XDG_DATA_HOME:-$HOME/.local/share}"
-for profile in qutebrowser-webapp qutebrowser-twitch-chat; do
+for profile in qutebrowser-webapp qutebrowser-twitch-chat qutebrowser-hobby; do
     target="$profile_root/$profile/data/userscripts"
     if [[ ! -e $target && ! -L $target ]]; then
         mkdir -p -- "${target%/*}"

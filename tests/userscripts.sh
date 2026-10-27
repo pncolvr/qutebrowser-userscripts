@@ -78,6 +78,28 @@ PYTEST
 done
 printf 'PASS: page actions load through qutebrowser, including paths containing spaces\n'
 
+node --input-type=module - "$script_root/js/unlockinsta.js" <<'JS'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+const source = fs.readFileSync(process.argv[2], 'utf8');
+const assigned = [];
+const context = {
+    URL,
+    encodeURIComponent,
+    window: {
+        location: {
+            href: 'https://www.instagram.com/missmikkaa/',
+            assign: url => assigned.push(url)
+        }
+    }
+};
+vm.runInNewContext(source, context);
+assert.deepEqual(assigned, ['https://instapeep.com/?u=missmikkaa']);
+console.log('PASS: UnlockInsta opens the matching InstaPeep profile');
+JS
+
 for name in certificate download; do
     "$script_root/$name"
     jq -e --arg root "$script_root" --arg name "$name" --arg url "$QUTE_URL" \
@@ -106,11 +128,11 @@ done
 for source in "$script_root"/custom/js/*.js; do
     name=${source##*/}
     [[ $(readlink -f "$QUTE_CONFIG_DIR/greasemonkey/_c.js.$name") == "$source" ]]
-    for profile in qutebrowser-webapp qutebrowser-twitch-chat; do
+    for profile in qutebrowser-webapp qutebrowser-twitch-chat qutebrowser-hobby; do
         [[ $(readlink -f "$XDG_DATA_HOME/$profile/config/greasemonkey/_c.js.$name") == "$source" ]]
     done
 done
-for profile in qutebrowser-webapp qutebrowser-twitch-chat; do
+for profile in qutebrowser-webapp qutebrowser-twitch-chat qutebrowser-hobby; do
     [[ $(readlink -f "$XDG_DATA_HOME/$profile/data/userscripts") == "$script_root" ]]
 done
 printf 'PASS: custom assets install into all profiles before reload\n'
