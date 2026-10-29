@@ -1,0 +1,109 @@
+// MotionFlow separable Lanczos-3 convolution. Coefficients are precomputed
+// once per output geometry; both pixel filtering passes run on the GPU.
+.version 7.0
+.target sm_70
+.address_size 64
+.visible .entry lanczos_horizontal(
+ .param .u64 src_ptr, .param .u64 dst_ptr,
+ .param .u64 indices_ptr, .param .u64 weights_ptr,
+ .param .u32 src_width, .param .u32 dst_width,
+ .param .u32 tap_count, .param .u32 pixel_count
+){
+ .reg .pred %p<3>;
+ .reg .b32 %r<22>;
+ .reg .b64 %d<14>;
+ .reg .f32 %f<10>;
+ ld.param.u64 %d0,[src_ptr]; ld.param.u64 %d1,[dst_ptr];
+ ld.param.u64 %d2,[indices_ptr]; ld.param.u64 %d3,[weights_ptr];
+ ld.param.u32 %r0,[src_width]; ld.param.u32 %r1,[dst_width];
+ ld.param.u32 %r2,[tap_count]; ld.param.u32 %r3,[pixel_count];
+ mov.u32 %r4,%ctaid.x; mov.u32 %r5,%ntid.x; mov.u32 %r6,%tid.x;
+ mad.lo.u32 %r7,%r4,%r5,%r6;
+ setp.ge.u32 %p0,%r7,%r3; @%p0 bra FINISH;
+ div.u32 %r8,%r7,%r1; rem.u32 %r9,%r7,%r1;
+ mov.f32 %f0,0f00000000; mov.f32 %f1,0f00000000;
+ mov.f32 %f2,0f00000000; mov.f32 %f3,0f00000000;
+ mov.u32 %r10,0;
+ mul.lo.u32 %r11,%r9,%r2;
+TAPS:
+ add.u32 %r12,%r11,%r10;
+ mul.wide.u32 %d4,%r12,4;
+ add.u64 %d5,%d2,%d4; add.u64 %d6,%d3,%d4;
+ ld.global.u32 %r13,[%d5]; ld.global.f32 %f4,[%d6];
+ mad.lo.u32 %r14,%r8,%r0,%r13;
+ mul.wide.u32 %d7,%r14,4; add.u64 %d8,%d0,%d7;
+ ld.global.u8 %r15,[%d8+0];
+ cvt.rn.f32.u32 %f5,%r15;
+ ld.global.u8 %r16,[%d8+1];
+ cvt.rn.f32.u32 %f6,%r16;
+ ld.global.u8 %r17,[%d8+2];
+ cvt.rn.f32.u32 %f7,%r17;
+ ld.global.u8 %r18,[%d8+3];
+ cvt.rn.f32.u32 %f8,%r18;
+ fma.rn.f32 %f0,%f5,%f4,%f0;
+ fma.rn.f32 %f1,%f6,%f4,%f1;
+ fma.rn.f32 %f2,%f7,%f4,%f2;
+ fma.rn.f32 %f3,%f8,%f4,%f3;
+ add.u32 %r10,%r10,1;
+ setp.lt.u32 %p1,%r10,%r2; @%p1 bra TAPS;
+ mul.wide.u32 %d9,%r7,16; add.u64 %d10,%d1,%d9;
+ st.global.f32 [%d10+0],%f0;
+ st.global.f32 [%d10+4],%f1;
+ st.global.f32 [%d10+8],%f2;
+ st.global.f32 [%d10+12],%f3;
+FINISH: ret;
+}
+.visible .entry lanczos_vertical(
+ .param .u64 src_ptr, .param .u64 dst_ptr,
+ .param .u64 indices_ptr, .param .u64 weights_ptr,
+ .param .u32 src_width, .param .u32 dst_width,
+ .param .u32 tap_count, .param .u32 pixel_count
+){
+ .reg .pred %p<3>;
+ .reg .b32 %r<22>;
+ .reg .b64 %d<14>;
+ .reg .f32 %f<10>;
+ ld.param.u64 %d0,[src_ptr]; ld.param.u64 %d1,[dst_ptr];
+ ld.param.u64 %d2,[indices_ptr]; ld.param.u64 %d3,[weights_ptr];
+ ld.param.u32 %r0,[src_width]; ld.param.u32 %r1,[dst_width];
+ ld.param.u32 %r2,[tap_count]; ld.param.u32 %r3,[pixel_count];
+ mov.u32 %r4,%ctaid.x; mov.u32 %r5,%ntid.x; mov.u32 %r6,%tid.x;
+ mad.lo.u32 %r7,%r4,%r5,%r6;
+ setp.ge.u32 %p0,%r7,%r3; @%p0 bra FINISH;
+ div.u32 %r8,%r7,%r1; rem.u32 %r9,%r7,%r1;
+ mov.f32 %f0,0f00000000; mov.f32 %f1,0f00000000;
+ mov.f32 %f2,0f00000000; mov.f32 %f3,0f00000000;
+ mov.u32 %r10,0;
+ mul.lo.u32 %r11,%r8,%r2;
+TAPS:
+ add.u32 %r12,%r11,%r10;
+ mul.wide.u32 %d4,%r12,4;
+ add.u64 %d5,%d2,%d4; add.u64 %d6,%d3,%d4;
+ ld.global.u32 %r13,[%d5]; ld.global.f32 %f4,[%d6];
+ mad.lo.u32 %r14,%r13,%r0,%r9;
+ mul.wide.u32 %d7,%r14,16; add.u64 %d8,%d0,%d7;
+ ld.global.f32 %f5,[%d8+0];
+ ld.global.f32 %f6,[%d8+4];
+ ld.global.f32 %f7,[%d8+8];
+ ld.global.f32 %f8,[%d8+12];
+ fma.rn.f32 %f0,%f5,%f4,%f0;
+ fma.rn.f32 %f1,%f6,%f4,%f1;
+ fma.rn.f32 %f2,%f7,%f4,%f2;
+ fma.rn.f32 %f3,%f8,%f4,%f3;
+ add.u32 %r10,%r10,1;
+ setp.lt.u32 %p1,%r10,%r2; @%p1 bra TAPS;
+ mul.wide.u32 %d9,%r7,4; add.u64 %d10,%d1,%d9;
+ max.f32 %f0,%f0,0f00000000;
+ min.f32 %f0,%f0,0f437F0000;
+ cvt.rni.u32.f32 %r15,%f0; st.global.u8 [%d10+0],%r15;
+ max.f32 %f1,%f1,0f00000000;
+ min.f32 %f1,%f1,0f437F0000;
+ cvt.rni.u32.f32 %r16,%f1; st.global.u8 [%d10+1],%r16;
+ max.f32 %f2,%f2,0f00000000;
+ min.f32 %f2,%f2,0f437F0000;
+ cvt.rni.u32.f32 %r17,%f2; st.global.u8 [%d10+2],%r17;
+ max.f32 %f3,%f3,0f00000000;
+ min.f32 %f3,%f3,0f437F0000;
+ cvt.rni.u32.f32 %r18,%f3; st.global.u8 [%d10+3],%r18;
+FINISH: ret;
+}

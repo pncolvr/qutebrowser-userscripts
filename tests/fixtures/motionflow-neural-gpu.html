@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><canvas width="64" height="32" id="source"></canvas>
+<script>
+(async()=>{
+ const canvas=document.getElementById('source'),ctx=canvas.getContext('2d'),expected=ctx.createImageData(64,32);
+ for(let y=0;y<32;y++)for(let x=0;x<64;x++)expected.data.set([x*3,y*7,(x+y)*2,255],(y*64+x)*4);
+ ctx.putImageData(expected,0,0);const stream=canvas.captureStream(30),timer=setInterval(()=>ctx.putImageData(expected,0,0),33);
+ const processor=new MediaStreamTrackProcessor({track:stream.getVideoTracks()[0],maxBufferSize:4});
+ const worker=new Worker('neural-worker.js'),channel=new MessageChannel();
+ let checked=false;
+ const stop=()=>{clearInterval(timer);stream.getTracks().forEach(t=>t.stop());worker.postMessage({type:'stop'});worker.terminate();};
+ const fail=error=>{if(checked)return;checked=true;stop();console.log('TEST_RESULT:'+JSON.stringify({passed:false,error:String(error)}));};
+ worker.onerror=event=>fail(event.message);
+ worker.onmessage=({data})=>{
+  if(data.type==='boot')worker.postMessage({type:'start',stream:processor.readable,port:channel.port1,width:64,height:32,options:{helperUrl:'ws://127.0.0.1:8770/v1',outputFormat:'RGBA',maxFps:60,outputWidth:64,outputHeight:32,content:'live'}},[processor.readable,channel.port1]);
+  if(data.type==='error')fail(data.message);
+ };
+ channel.port2.onmessage=async({data})=>{
+  if(data.type!=='batch')return;
+  try{
+   for(const item of data.frames){
+    try{
+     if(checked)continue;
+     const pixels=new Uint8Array(64*32*4);await item.frame.copyTo(pixels,{format:'RGBA'});
+     const error=Math.max(...pixels.map((v,i)=>Math.abs(v-expected.data[i])));
+     if(error>1)throw new Error('AI frame transport changed orientation or colors: '+error);
+     checked=true;stop();console.log('TEST_RESULT:'+JSON.stringify({passed:true,colorError:error,rawFrames:true}));
+    }finally{item.frame.close();}
+   }
+  }catch(error){checked=false;fail(error);}
+ };
+ setTimeout(()=>fail('Neural GPU pixel test timed out'),12000);
+})().catch(error=>console.log('TEST_RESULT:'+JSON.stringify({passed:false,error:String(error)})));
+</script>

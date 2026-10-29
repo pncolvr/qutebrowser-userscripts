@@ -1,0 +1,81 @@
+<!doctype html><meta charset="utf-8"><style>
+#movie_player,.video-player{position:relative;width:720px;height:440px;background:#000}video{width:640px;height:360px;position:absolute;left:30px;top:20px}.ytp-right-controls{position:absolute;bottom:0;right:0}.inner{position:absolute;inset:0;z-index:10}#custom-captions{position:absolute;top:320px;left:100px;z-index:50;color:white;background:black}
+</style><div id="movie_player" class="video-player"><div class="inner"><video class="html5-main-video" src="sample24.webm" autoplay muted loop></video></div><span id="custom-captions">Caption</span><div class="ytp-right-controls"></div><div class="ytp-settings-menu" hidden style="background:rgba(28,28,28,.9);border-radius:12px;backdrop-filter:none"></div></div>
+<script>
+if(location.search.includes('generic')){document.getElementById('movie_player').removeAttribute('id');document.querySelector('.ytp-right-controls').remove();}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const check=(x,m)=>{if(!x)throw new Error(m);console.log('PASS: '+m)};
+async function until(test,time=15000){const end=performance.now()+time;while(performance.now()<end){const x=await test();if(x)return x;await wait(50)}throw new Error('Timeout: '+test)}
+let next=0;const pending=new Map();addEventListener('message',e=>{if(e.data?.type==='motionflow-test-reply'){pending.get(e.data.id)?.(e.data.result);pending.delete(e.data.id)}});
+const inspect=()=>new Promise(resolve=>{const id=++next;pending.set(id,resolve);postMessage({type:'motionflow-test',id},'*')});
+(async()=>{try{
+ const video=document.querySelector('video');await video.play();const options=await until(()=>document.getElementById('qute-motionflow-options'));options.click();
+ const panel=document.getElementById('qute-motionflow-panel'),res=document.getElementById('qute-motionflow-resolution'),buffer=document.getElementById('qute-motionflow-buffer-choice');
+ check(typeof window.__motionFlowAuth==='undefined','Browser pairing stays outside the page script world');
+ const method=document.getElementById('qute-motionflow-upscale-method');
+ check(method.value==='lanczos','Lanczos is the default upscaler');
+ check(['general','animation','live','gameplay'].every(id=>document.getElementById('qute-motionflow-content-'+id)),'All four content profiles are available');
+ document.getElementById('qute-motionflow-content-gameplay').click();check((await inspect()).contentId==='gameplay','Gameplay is selectable while off');
+ document.getElementById('qute-motionflow-content-general').click();
+ res.value='1080';res.dispatchEvent(new Event('change',{bubbles:true}));
+ check(!(await inspect()).enabled,'Resolution changes do not enable processing');
+ document.getElementById('qute-motionflow-upscale').click();
+ await until(async()=>{const s=await inspect();if(s.state.state==='error')throw new Error(s.state.message);return s.session?.showing});await wait(1100);
+ let resizing=await inspect();
+ check(resizing.options.upscaleMethod==='lanczos'&&resizing.session.stats.upscaler==='Lanczos 3 · GPU','Default enlargement uses actual GPU Lanczos without a neural upscaler');
+ check(resizing.enabled&&resizing.options.interpolation===false&&resizing.session.stats.passthrough&&resizing.session.stats.generatedFps<2,'Upscaling independently starts resizing with interpolation disabled');
+ check(resizing.modelPreparation.count===0,'Source-only resizing never prepares the interpolation model');
+ check(panel.querySelector('.mf-smoothing-state').textContent==='Off'&&panel.querySelector('.mf-upscale-state').textContent==='Running','Independent operation states match active resizing');
+ video.pause();await until(async()=>(await inspect()).session?.frozen);
+ const frozen=document.getElementById('qute-motionflow-output'),comparePaused=document.getElementById('qute-motionflow-compare');
+ const signature=()=>{const data=frozen.getContext('2d').getImageData(0,0,Math.floor(frozen.width/2),frozen.height).data;let hash=2166136261;for(let i=0;i<data.length;i+=17)hash=Math.imul(hash^data[i],16777619);return hash};
+ const enhancedSignature=signature();comparePaused.click();
+ check(comparePaused.getAttribute('aria-checked')==='true'&&signature()!==enhancedSignature,'Paused Lanczos comparison visibly replaces the left half with untouched source pixels');
+ comparePaused.click();check(signature()===enhancedSignature,'Turning paused compare off restores the exact enhanced pixels');
+ check((await inspect()).workers===0&&!(await inspect()).audio.active&&video.paused,'Paused Lanczos inspection runs no workers or audio delay');
+ await video.play();await until(async()=>(await inspect()).session?.showing);
+
+ document.getElementById('qute-motionflow-upscale').click();await until(async()=>!(await inspect()).session);
+ check(!(await inspect()).enabled&&!(await inspect()).audio.active,'Turning off the last operation releases its process');
+ document.getElementById('qute-motionflow-upscale').click();
+ method.value='ai';method.dispatchEvent(new Event('change',{bubbles:true}));
+ check((await inspect()).enabled,'Choosing AI preserves the enabled operation');
+ document.getElementById('qute-motionflow-smoothing').click();
+ buffer.value='1500';buffer.dispatchEvent(new Event('change',{bubbles:true}));
+ document.getElementById('qute-motionflow-profile-fps30').click();options.click();
+ await until(async()=>{const s=await inspect();if(s.state.state==='error')throw new Error(s.state.message);return s.session?.showing});await wait(1300);
+ let s=await inspect();console.log('CUSTOM_BASELINE:'+JSON.stringify(s.session.stats));
+ check(s.modelPreparation.count>=1&&s.modelPreparation.paused,'Cold interpolation preparation pauses source playback and resumes automatically');
+ check(s.session.stats.pixelBackend==='CUDA','The live helper uses GPU pixel delivery');
+ const overlay=document.getElementById('qute-motionflow-output'),v=video.getBoundingClientRect(),o=overlay.getBoundingClientRect();
+ check(['left','top','width','height'].every(k=>Math.abs(v[k]-o[k])<1),'Output remains aligned inside nested generic containers');
+ overlay.style.pointerEvents='auto';check(document.elementFromPoint(v.left+10,v.top+10)===overlay,'Enhanced output covers the source video');
+ const c=document.getElementById('custom-captions').getBoundingClientRect();check(document.elementFromPoint(c.left+2,c.top+2).id==='custom-captions','Native captions stay above the enhanced picture');overlay.style.pointerEvents='none';
+ check(s.options.maxFps===30&&s.session.stats.upscaler?.includes('Real-ESRGAN')&&s.session.stats.width===1920&&s.session.stats.height===1080,'Independent FPS and AI upscaling deliver 1080p at 30 fps');
+ check(s.session.stats.processingWidth===640&&s.session.stats.processingHeight===360,'Upscaling follows interpolation at source resolution');
+ check(s.session.stats.bufferedMs>=1100&&s.session.stats.bufferBytes<512*1048576,'Long prepared buffer is real and memory bounded');
+ check(document.getElementById('qute-motionflow-buffer').hidden,'Buffer progress disappears after preparation');
+ options.click();console.log('MOTIONFLOW_MENU_PREVIEW');check(panel.querySelector('.mf-upscale-state').textContent==='Running'&&panel.querySelector('.mf-smoothing-state').textContent==='Running','Panel shows both active operations');
+ const diagnostic=document.getElementById('qute-motionflow-diagnostics');diagnostic.click();check(!document.getElementById('qute-motionflow-diagnostic-overlay').hidden,'Live on-screen diagnostics toggle on');diagnostic.click();
+ check(document.getElementById('qute-motionflow-diagnostic-overlay').hidden,'Live diagnostics toggle off');
+ check(getComputedStyle(panel).backdropFilter==='none','Settings have no backdrop blur');
+ check(getComputedStyle(panel).backgroundColor==='rgba(28, 28, 28, 0.97)','Settings use a nearly opaque background for readability');
+ check(getComputedStyle(options.querySelector('svg')).transform==='none'&&[...options.querySelectorAll('.mf-slider-knob')].length===3&&getComputedStyle(options.querySelector('.mf-slider-knob')).transitionProperty==='transform','Settings knobs use an open/close transition while the icon stays fixed');
+ check(getComputedStyle(options).backgroundColor==='rgba(0, 0, 0, 0)','Settings have no open-state highlight');
+ if(location.search.includes('generic')){const player=video.closest('.video-player'),button=document.createElement('button');button.textContent='FS';button.style.cssText='position:fixed;left:740px;top:520px;width:40px;height:40px;z-index:100';document.body.append(button);const entered=new Promise((resolve,reject)=>button.addEventListener('click',()=>player.requestFullscreen().then(resolve,reject),{once:true}));console.log('FULLSCREEN_REQUEST');await entered;button.remove();await wait(800);check((await inspect()).enabled&&(await inspect()).session.showing,'Generic controls and output survive player fullscreen');if(panel.hidden)options.click();const menuBox=panel.getBoundingClientRect();check(panel.matches(':popover-open')&&panel.contains(document.elementFromPoint(menuBox.left+20,menuBox.top+20)),'Settings remain above video overlays in fullscreen');await document.exitFullscreen();}
+ res.value='2160';res.dispatchEvent(new Event('change',{bubbles:true}));
+ await until(async()=>(await inspect()).session?.showing,18000);await wait(800);s=await inspect();
+ check(s.session.stats.width===3840&&s.session.stats.height===2160,'4K resizing preserves aspect ratio');
+ check(s.session.stats.bufferBytes<=512*1048576&&s.session.stats.targetBufferMs<1500,'4K buffer is capped by its actual frame memory');
+ res.value='1080';res.dispatchEvent(new Event('change',{bubbles:true}));await until(async()=>(await inspect()).session?.showing);
+ video.playbackRate=2;await until(async()=>{const x=await inspect();return x.session?.stats.passthrough&&(x.session.showing||x.state.state==='native')});await wait(1800);s=await inspect();
+ check(s.session.stats.generatedFps<2&&s.session.showing&&s.session.stats.width===1920,'Already-fast video skips interpolation and retains the selected resizing even when capture is slow');
+ const customInput=document.getElementById('qute-motionflow-custom-fps');customInput.value='120';customInput.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('qute-motionflow-profile-custom').click();check((await inspect()).options.maxFps===120,'Custom high FPS remains selectable');check(!panel.querySelector('.mf-performance-note').hidden,'Demanding selections display a warning');
+ if(panel.hidden)options.click();document.body.click();check(panel.hidden,'Clicking outside closes settings');
+ document.getElementById('qute-motionflow-smoothing').click();
+ check((await inspect()).enabled,'Upscaling remains active when smoothing is switched off');
+ document.getElementById('qute-motionflow-upscale').click();await until(async()=>!(await inspect()).session);
+ check(!(await inspect()).audio.active&&(await inspect()).workers===0,'Custom processing stops and releases audio and workers');
+ console.log('TEST_RESULT:'+JSON.stringify({passed:true,custom:true}));
+}catch(error){console.log('TEST_RESULT:'+JSON.stringify({passed:false,error:String(error),stack:error.stack,state:await inspect()}))}})();
+</script>

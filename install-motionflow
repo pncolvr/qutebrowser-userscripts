@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Install a user launcher and desktop entry for the local MotionFlow helper."""
+
+import argparse
+import os
+from pathlib import Path
+import shlex
+import tempfile
+
+
+def install_file(path, text, mode):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent, mode='w', encoding='utf-8', delete=False
+    ) as output:
+        temporary = Path(output.name)
+        try:
+            output.write(text)
+            output.flush()
+            temporary.chmod(mode)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def desktop_exec(path, action):
+    # Desktop string escaping is applied before Exec argument parsing. Percent
+    # signs must also survive field-code expansion as literal filename text.
+    value = str(path).replace('%', '%%')
+    for character in ('\\', '"', '`', '$'):
+        value = value.replace(character, '\\' + character)
+    # A fixed executable also avoids desktop launchers probing a %% path before
+    # expanding field codes in the helper filename.
+    return '/usr/bin/env "' + value.replace('\\', '\\\\') + '" ' + action
+
+
+def main():
+    argparse.ArgumentParser(description=__doc__).parse_args()
+    helper = Path(__file__).resolve().with_name('motionflow-helper')
+    if not helper.is_file() or not os.access(helper, os.X_OK):
+        raise SystemExit(
+            'Run this installer from the userscripts checkout containing motionflow-helper'
+        )
+    launcher = Path.home() / '.local/bin/motionflow-helper'
+    applications = (
+        Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'applications'
+    )
+    entry = applications / 'motionflow-helper.desktop'
+    # No shell interpolation of the repository path, even for spaces/metacharacters.
+    install_file(launcher, '#!/bin/sh\nexec ' + shlex.quote(str(helper)) + ' "$@"\n', 0o755)
+    install_file(
+        entry,
+        f'''[Desktop Entry]
+Type=Application
+Name=MotionFlow Helper
+Comment=Start the local GPU helper for video smoothing and resizing
+Exec={desktop_exec(launcher, 'start')}
+Icon=video-display
+Terminal=false
+StartupNotify=false
+Categories=Utility;
+Actions=Restart;Stop;
+
+[Desktop Action Restart]
+Name=Restart helper
+Exec={desktop_exec(launcher, 'restart')}
+
+[Desktop Action Stop]
+Name=Stop helper
+Exec={desktop_exec(launcher, 'stop')}
+''',
+        0o644,
+    )
+    print(f'Installed {launcher}\nInstalled {entry}')
+    print(
+        'The helper was not started. Its runtime setup and Hyprland configuration were not changed.'
+    )
+    print('Start from the desktop entry, or: gio launch ' + shlex.quote(str(entry)))
+    print('Inside your existing hl.on("hyprland.start", ...) callback, add:')
+    print('  hl.exec_cmd("gtk-launch motionflow-helper")')
+    print('Run this installer again if you move the userscripts checkout.')
+
+
+if __name__ == '__main__':
+    main()

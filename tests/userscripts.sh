@@ -6,6 +6,7 @@ test_dir=$(mktemp -d /tmp/qutebrowser-userscripts-test.XXXXXXXX)
 trap 'rm -rf -- "$test_dir"' EXIT
 mkdir -p "$test_dir/bin" "$test_dir/home" "$test_dir/browser-data/sessions"
 export HOME="$test_dir/home" XDG_CONFIG_HOME="$test_dir/home/.config"
+export XDG_CACHE_HOME="$test_dir/cache"
 export XDG_DATA_HOME="$test_dir/home/.local/share" QUTE_DATA_DIR="$test_dir/browser-data"
 export QUTE_CONFIG_DIR="$XDG_CONFIG_HOME/qutebrowser" QUTE_FIFO="$test_dir/commands"
 export USERSCRIPTS_TEST_DIR="$test_dir" PATH="$test_dir/bin:$PATH"
@@ -118,6 +119,19 @@ rg -Fq 'greasemonkey-reload' "$QUTE_FIFO"
 [[ ! -e ${generated[0]} ]]
 printf 'PASS: Dark Reader toggles generated scripts in the active profile\n'
 
+# Exercise the filename migration without removing independent user scripts.
+legacy_name='_c.js.youtube-smoothvision.js'
+legacy_main="$QUTE_CONFIG_DIR/greasemonkey/$legacy_name"
+ln -s "$script_root/custom/js/youtube-smoothvision.js" "$legacy_main"
+for profile in qutebrowser-webapp qutebrowser-twitch-chat qutebrowser-hobby; do
+    mkdir -p "$XDG_DATA_HOME/$profile/config/greasemonkey"
+done
+ln -s "$legacy_main" "$XDG_DATA_HOME/qutebrowser-webapp/config/greasemonkey/$legacy_name"
+printf '%s\n' '// independently installed user script' > "$XDG_DATA_HOME/qutebrowser-twitch-chat/config/greasemonkey/$legacy_name"
+printf '%s\n' '// unrelated source' > "$test_dir/independent.js"
+ln -s "$test_dir/independent.js" "$XDG_DATA_HOME/qutebrowser-hobby/config/greasemonkey/$legacy_name"
+mkdir -p "$XDG_CACHE_HOME/qute-motionflow"
+printf '%064d' 0 > "$XDG_CACHE_HOME/qute-motionflow/browser.token"
 : > "$QUTE_FIFO"
 "$script_root/apply_custom" > "$test_dir/generation"
 [[ $(cat "$QUTE_FIFO") == $'greasemonkey-reload\nreload' ]]
@@ -135,4 +149,42 @@ done
 for profile in qutebrowser-webapp qutebrowser-twitch-chat qutebrowser-hobby; do
     [[ $(readlink -f "$XDG_DATA_HOME/$profile/data/userscripts") == "$script_root" ]]
 done
+[[ ! -e $legacy_main && ! -L $legacy_main ]]
+[[ ! -e $XDG_DATA_HOME/qutebrowser-webapp/config/greasemonkey/$legacy_name && ! -L $XDG_DATA_HOME/qutebrowser-webapp/config/greasemonkey/$legacy_name ]]
+rg -Fq 'independently installed user script' "$XDG_DATA_HOME/qutebrowser-twitch-chat/config/greasemonkey/$legacy_name"
+[[ $(readlink "$XDG_DATA_HOME/qutebrowser-hobby/config/greasemonkey/$legacy_name") == "$test_dir/independent.js" ]]
+printf 'PASS: MotionFlow filename migration removes managed links and preserves independent files/links\n'
 printf 'PASS: custom assets install into all profiles before reload\n'
+
+paired="$QUTE_CONFIG_DIR/greasemonkey/_a.motionflow-auth.js"
+[[ -f $paired && ! -L $paired && $(stat -c %a "$paired") == 600 ]]
+rg -Fq '@qute-js-world user' "$paired"
+rg -Fq 'event.isTrusted' "$paired"
+for profile in qutebrowser-webapp qutebrowser-twitch-chat qutebrowser-hobby; do
+    [[ ! -e $XDG_DATA_HOME/$profile/config/greasemonkey/_a.motionflow-auth.js ]]
+done
+printf 'PASS: private MotionFlow pairing is restricted to the active profile and trusted video controls\n'
+
+# Canonical targets must also work through relative paths and directory aliases,
+# even after the renamed source and the main legacy link no longer exist.
+relative_source=$(python3 - "$script_root/custom/js/youtube-smoothvision.js" "${legacy_main%/*}" <<'PYTEST'
+import os,sys
+print(os.path.relpath(sys.argv[1],sys.argv[2]))
+PYTEST
+)
+ln -s -- "./$relative_source" "$legacy_main"
+legacy_secondary="$XDG_DATA_HOME/qutebrowser-webapp/config/greasemonkey/$legacy_name"
+relative_main=$(python3 - "$legacy_main" "${legacy_secondary%/*}" <<'PYTEST'
+import os,sys
+print(os.path.relpath(sys.argv[1],sys.argv[2]))
+PYTEST
+)
+ln -s -- "$relative_main" "$legacy_secondary"
+"$script_root/lib/js-apply.sh" > "$test_dir/relative-generation"
+[[ ! -L $legacy_main && ! -L $legacy_secondary ]]
+ln -s -- "$test_dir/scripts with spaces/custom/js/../js/youtube-smoothvision.js" "$legacy_main"
+"$script_root/lib/js-apply.sh" > "$test_dir/aliased-generation"
+[[ ! -L $legacy_main ]]
+rg -Fq 'independently installed user script' "$XDG_DATA_HOME/qutebrowser-twitch-chat/config/greasemonkey/$legacy_name"
+[[ $(readlink "$XDG_DATA_HOME/qutebrowser-hobby/config/greasemonkey/$legacy_name") == "$test_dir/independent.js" ]]
+printf 'PASS: legacy migration resolves relative, aliased and dangling managed targets without deleting independent scripts\n'

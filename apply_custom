@@ -9,6 +9,12 @@ for profile in qutebrowser-webapp qutebrowser-twitch-chat qutebrowser-hobby; do
         ln -s -- "$script_root" "$target"
     fi
 done
+helper_cache="${XDG_CACHE_HOME:-$HOME/.cache}/qute-motionflow"
+if [[ -x $helper_cache/venv/bin/python && -f $helper_cache/model/rife_v4.25.onnx ]]; then
+    if ! "$script_root/motionflow-helper" restart >/dev/null; then
+        printf 'MotionFlow helper restart failed; see %s/helper.log\n' "$helper_cache" >&2
+    fi
+fi
 "$script_root/lib/css-apply.sh"
 "$script_root/lib/js-apply.sh"
 if [[ -n ${QUTE_FIFO:-} ]]; then

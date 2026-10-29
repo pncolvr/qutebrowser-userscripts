@@ -1,0 +1,141 @@
+<!doctype html><meta charset="utf-8"><title>MotionFlow image quality</title>
+<script>
+(async()=>{
+ const query=new URLSearchParams(location.search),scale=Number(query.get('scale')||1);
+ const width=640*scale,height=360*scale;
+ const canvas=()=>Object.assign(document.createElement('canvas'),{width,height});
+ class Engine{
+  constructor(address){
+   this.worker=new Worker(address);this.pending=[];this.sequence=0;
+   this.fatal=new Promise((_,reject)=>{this.fail=reject});
+   this.worker.onmessage=({data})=>{
+    if(data.type==='error'){this.fail(new Error(data.message));return}
+    const i=this.pending.findIndex(p=>p.type===data.type&&(p.id===undefined||p.id===data.id));
+    if(i>=0)this.pending.splice(i,1)[0].resolve(data);
+   };
+  }
+  wait(type,id){return Promise.race([new Promise(resolve=>this.pending.push({type,id,resolve})),this.fatal])}
+  async start(){await this.wait('boot');const ready=this.wait('ready');this.worker.postMessage({type:'start',manual:true,options:{analysisWidth:Math.min(640,320*scale),outputWidth:width,outputHeight:height}},[]);await ready}
+  async pair(a,b){
+   const start=this.sequence++*100,frames=[a,b];let offset,delay;
+   for(let i=0;i<2;i++){
+    const id=start+i,frame=new VideoFrame(frames[i],{timestamp:Math.round((start+i*66.666)*1000)}),accepted=this.wait('accepted',id);
+    this.worker.postMessage({type:'frame',id,frame},[frame]);({offset,delay}=await accepted);
+   }
+   const response=this.wait('pixels',start+2);this.worker.postMessage({type:'render',id:start+2,wall:offset+delay+start+33.333});
+   const result=await response,top=new Uint8ClampedArray(result.pixels.length),stride=width*4;
+   for(let y=0;y<height;y++)top.set(result.pixels.subarray((height-1-y)*stride,(height-y)*stride),y*stride);
+   return top;
+  }
+ }
+ class NeuralEngine{
+  constructor(){this.worker={terminate:()=>this.socket?.close()};this.sequence=0;this.pending=null;}
+  rpc(data,pixels){
+   return new Promise((resolve,reject)=>{
+    this.pending={resolve,reject,metadata:null,pixels:[]};
+    this.socket.send(JSON.stringify(data));if(pixels)this.socket.send(pixels);
+   });
+  }
+  async start(){
+   this.socket=new WebSocket('ws://127.0.0.1:8770/v1');this.socket.binaryType='arraybuffer';
+   await new Promise((resolve,reject)=>{this.socket.onopen=resolve;this.socket.onerror=()=>reject(new Error('AI test helper unavailable'));});
+   this.socket.onmessage=({data})=>{
+    const p=this.pending;if(!p)return;
+    if(typeof data==='string')p.metadata=JSON.parse(data);else p.pixels.push(new Uint8ClampedArray(data));
+    if(p.metadata?.type==='error'){this.pending=null;p.reject(new Error(p.metadata.message));return;}
+    if(p.metadata&&p.pixels.length===(p.metadata.frames?.length||0)){this.pending=null;p.resolve(p);}
+   };
+   await this.rpc({protocol:1,width,height,fps:30,content:'live'});
+  }
+  async pair(a,b){
+   await this.rpc({type:'reset'});const start=this.sequence++*100;
+   await this.rpc({type:'frame',id:1,time:start,split:.5},pixels(a));
+   const result=await this.rpc({type:'frame',id:2,time:start+66.666,split:.5},pixels(b));
+   const index=result.metadata.frames.reduce((best,item,i)=>Math.abs(item.time-start-33.333)<Math.abs(result.metadata.frames[best].time-start-33.333)?i:best,0);
+   return result.pixels[index];
+  }
+ }
+ const background=ctx=>{
+  ctx.fillStyle='#a7c9d9';ctx.fillRect(0,0,640,360);
+  for(let y=0;y<360;y+=12)for(let x=0;x<640;x+=12){ctx.fillStyle=((x+y)/12)%2?'#a2c4d4':'#b1d0dc';ctx.fillRect(x,y,12,12)}
+  ctx.fillStyle='#fafafa';ctx.fillRect(480,15,145,32);ctx.fillStyle='#17202a';ctx.font='bold 18px sans-serif';ctx.fillText('STATIC TEXT',490,38);
+ };
+ const face=(ctx,x,y)=>{
+  ctx.save();ctx.translate(x,y);ctx.lineWidth=4;ctx.strokeStyle='#161616';
+  ctx.fillStyle='#f5ce63';ctx.beginPath();ctx.arc(0,0,62,0,Math.PI*2);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#fff';ctx.fillRect(-32,-17,19,22);ctx.strokeRect(-32,-17,19,22);ctx.fillRect(13,-17,19,22);ctx.strokeRect(13,-17,19,22);
+  ctx.fillStyle='#151515';ctx.fillRect(-24,-12,5,13);ctx.fillRect(20,-12,5,13);
+  ctx.beginPath();ctx.moveTo(-28,27);ctx.quadraticCurveTo(0,49,30,20);ctx.stroke();ctx.restore();
+ };
+ const definitions=[
+  ['outlined-face',(ctx,t)=>{background(ctx);face(ctx,285+30*t,175+6*t)}],
+  ['thin-structure',(ctx,t)=>{background(ctx);ctx.save();ctx.translate(290+28*t,180+6*t);ctx.rotate(t*.13);ctx.fillStyle='#202020';ctx.fillRect(-65,-65,7,130);ctx.fillRect(58,-65,7,130);ctx.fillRect(-65,-4,130,8);ctx.strokeStyle='#f8f8f8';ctx.lineWidth=2;ctx.strokeRect(-65,-65,7,130);ctx.strokeRect(58,-65,7,130);ctx.restore()}],
+  ['occluding-pole',(ctx,t)=>{background(ctx);face(ctx,280+46*t,185);ctx.fillStyle='#292929';ctx.fillRect(320,70,25,250);ctx.fillStyle='#e1e1e1';ctx.fillRect(325,70,8,250)}],
+  ['crossing-objects',(ctx,t)=>{background(ctx);ctx.lineWidth=4;ctx.strokeStyle='#111';ctx.fillStyle='#557ce8';ctx.fillRect(350-38*t,110,58,155);ctx.strokeRect(350-38*t,110,58,155);ctx.fillStyle='#e4664e';ctx.fillRect(270+42*t,145,70,150);ctx.strokeRect(270+42*t,145,70,150)}],
+ ];
+ function draw(paint,t){const c=canvas(),ctx=c.getContext('2d');ctx.scale(scale,scale);paint(ctx,t);return c}
+ function metrics(actual,truth){
+  // Compare each resolution at the same logical display size. Native-pixel edge
+  // masks otherwise select different antialiasing fringes at different scales.
+  const w=640,h=360;
+  if(scale!==1){
+   const shrink=data=>{const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.drawImage(output(data),0,0,w,h);return ctx.getImageData(0,0,w,h).data};
+   actual=shrink(actual);truth=shrink(truth);
+  }
+  let sum=0,edgeSum=0,count=0,edges=0,bad=0;
+  for(let y=12;y<h-12;y++)for(let x=12;x<w-12;x++){
+   const p=(y*w+x)*4;let error=0,gradient=0,max=0;
+   for(let c=0;c<3;c++){const delta=Math.abs(actual[p+c]-truth[p+c]);error+=delta;max=Math.max(max,delta);gradient=Math.max(gradient,Math.abs(truth[p+c]-truth[p+4+c]),Math.abs(truth[p+c]-truth[p+w*4+c]));}
+   sum+=error/3;count++;if(max>40)bad++;
+   if(gradient>35){edgeSum+=error/3;edges++;}
+  }
+  return {mae:sum/count,edgeMae:edgeSum/Math.max(1,edges),outlierFraction:bad/count};
+ }
+ function pixels(c){return c.getContext('2d').getImageData(0,0,width,height).data}
+ function output(data){const c=canvas();c.getContext('2d').putImageData(new ImageData(data,width,height),0,0);return c}
+ async function exportImage(name,truth,reference,candidate){
+  if(!query.has('export'))return;
+  const c=document.createElement('canvas');c.width=width*3;c.height=height+30;const ctx=c.getContext('2d');ctx.fillStyle='#141414';ctx.fillRect(0,0,c.width,c.height);ctx.fillStyle='#fff';ctx.font='16px sans-serif';
+  for(const [i,[label,image]] of [['Expected middle frame',truth],['Previous renderer',reference],['Candidate',candidate]].entries()){ctx.fillText(label,i*width+12,21);ctx.drawImage(image,i*width,30)}
+  await fetch('/quality-image/'+name+'.png',{method:'POST',body:c.toDataURL('image/png').split(',')[1]});
+ }
+ const engines=[];
+ try{
+  const candidate=query.has('neural')?new NeuralEngine():new Engine('worker.js');engines.push(candidate);await candidate.start();
+  const reference=query.has('reference')?new Engine('reference-worker.js'):null;if(reference){engines.push(reference);await reference.start()}
+  const cases=definitions.map(([name,paint])=>({name,a:draw(paint,0),b:draw(paint,1),truth:draw(paint,.5)}));
+  if(query.has('clips')){
+   const clips=await (await fetch('quality-clips.json')).json();
+   for(const clip of clips){
+    const images=[];for(const address of clip.images){const image=await createImageBitmap(await (await fetch(address)).blob());const c=canvas();c.getContext('2d').drawImage(image,0,0,width,height);image.close();images.push(c)}
+    cases.push({name:clip.name,a:images[0],truth:images[1],b:images[2],real:true});
+   }
+  }
+  const results=[];
+  for(const test of cases){
+   const actual=await candidate.pair(test.a,test.b),before=reference?await reference.pair(test.a,test.b):actual,truth=pixels(test.truth);
+   const blended=new Uint8ClampedArray(truth.length),ap=pixels(test.a),bp=pixels(test.b);
+   for(let i=0;i<blended.length;i++)blended[i]=(ap[i]+bp[i])/2;
+   const result={name:test.name,real:!!test.real,candidate:metrics(actual,truth),reference:metrics(before,truth),crossfade:metrics(blended,truth)};results.push(result);console.log('QUALITY:'+JSON.stringify(result));
+   await exportImage(test.name,test.truth,output(before),output(actual));
+  }
+  // Bound visible deformation, rather than accepting a high output frame count.
+  // Occlusion scenes intentionally have looser limits: hidden pixels are unknown.
+  const limits={'outlined-face':[1,7,.003],'thin-structure':[1.2,17,.005],
+    'occluding-pole':[4,39,.04],'crossing-objects':[4.5,30,.05]};
+  for(const result of results.filter(r=>!r.real)){
+    const [mae,edge,outliers]=limits[result.name],m=result.candidate;
+    if(query.has('neural')){
+      if(m.mae>result.crossfade.mae||m.edgeMae>result.crossfade.edgeMae*1.1)throw new Error('AI motion geometry regressed beyond frame blending: '+JSON.stringify(result));
+      continue;
+    }
+    if(m.mae>mae||m.edgeMae>edge||m.outlierFraction>outliers)
+      throw new Error('Motion-boundary regression: '+JSON.stringify(result));
+    if(['outlined-face','thin-structure'].includes(result.name)&&m.mae>result.crossfade.mae*.6)
+      throw new Error('Normal object motion must improve materially on frame blending');
+  }
+  for(const engine of engines)engine.worker.terminate();
+  console.log('TEST_RESULT:'+JSON.stringify({passed:true,quality:results}));
+ }catch(error){for(const engine of engines)engine.worker.terminate();console.log('TEST_RESULT:'+JSON.stringify({passed:false,error:String(error),stack:error.stack}));}
+})();
+</script>

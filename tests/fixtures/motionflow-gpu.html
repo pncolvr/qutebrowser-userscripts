@@ -1,0 +1,113 @@
+<!doctype html><canvas id="display" width="256" height="128"></canvas>
+<script>
+(async()=>{
+  const worker=new Worker('worker.js'),pending=[];
+  let fail;
+  const fatal=new Promise((_,reject)=>{fail=reject});
+  worker.onmessage=({data})=>{
+    if(data.type==='error'){fail(new Error(data.message+' '+data.stack));return}
+    const index=pending.findIndex(p=>p.type===data.type&&(p.id===undefined||p.id===data.id));
+    if(index>=0)pending.splice(index,1)[0].resolve(data);
+  };
+  const wait=(type,id)=>Promise.race([new Promise(resolve=>pending.push({type,id,resolve})),fatal]);
+  try {
+    await wait('boot');const off=display.transferControlToOffscreen();
+    const initialized=wait('ready');worker.postMessage({type:'start',canvas:off,manual:true,options:{analysisWidth:256}},[off]);
+    console.log('GPU_READY:'+JSON.stringify(await initialized));
+    const source=document.createElement('canvas');source.width=256;source.height=128;
+    const painter=source.getContext('2d');
+    const value=(x,y)=>Math.round(128+40*Math.sin(x*.21)+35*Math.sin(y*.17)+30*Math.sin((x+y)*.11));
+    let offset=0,delay=0;
+    for(let n=0;n<3;n++) {
+      const data=painter.createImageData(256,128);
+      for(let y=0;y<128;y++)for(let x=0;x<256;x++) {
+        const p=(y*256+x)*4,c=value(x-n*4,y);data.data.set([c,c,c,255],p);
+      }
+      painter.putImageData(data,0,0);
+      const frame=new VideoFrame(source,{timestamp:n*33333});const accepted=wait('accepted',n);
+      worker.postMessage({type:'frame',frame,id:n},[frame]);{const reply=await accepted;offset=reply.offset;delay=reply.delay;}
+    }
+    const image=wait('pixels',10);worker.postMessage({type:'render',id:10,wall:offset+delay+16.6665});
+    const result=await image;let sum=0,count=0;
+    for(let y=16;y<112;y++)for(let x=16;x<240;x++) {sum+=Math.abs(result.pixels[(y*256+x)*4]-value(x-2,127-y));count++;}
+    const error=sum/count;
+    console.log('GPU_MOTION:'+JSON.stringify({error,phase:result.phase,held:result.held}));
+    if(error>=8)throw new Error('Whole-image translation is inaccurate');
+    for(const split of [.25,.5,.75]){
+      const response=wait('pixels',20+split*100);
+      worker.postMessage({type:'render',id:20+split*100,wall:offset+delay+16.6665,comparison:true,split});
+      const compared=await response;
+      if(Math.abs(compared.originalTime)>0.001)throw new Error('Comparison source timestamp is not the buffered A frame');
+      for(let y=16;y<112;y++)for(let x=16;x<240;x++){
+        const p=(y*256+x)*4;
+        const expected=x+.5<split*256?value(x,127-y):result.pixels[p];
+        if(Math.abs(compared.pixels[p]-expected)>1)throw new Error('Comparison pixels or draggable split do not match their shared playback time');
+      }
+    }
+    console.log('PASS: Comparison shows the delayed unwarped source and matching interpolation at movable splits');
+    // A moving foreground object must also improve on a simple crossfade.
+    const objectPixel=(x,y,dx,dy)=>{
+      const bx=x-105-dx,by=y-62-dy;
+      if(bx*bx+by*by<25*25)return Math.round(190+30*Math.sin(bx*.3)+20*Math.cos(by*.25));
+      return Math.round(35+15*Math.sin(x*.16)*Math.cos(y*.13));
+    };
+    for(let n=0;n<3;n++){
+      const data=painter.createImageData(256,128);
+      for(let y=0;y<128;y++)for(let x=0;x<256;x++){
+        const c=objectPixel(x,y,n*12,n*4);data.data.set([c,c,c,255],(y*256+x)*4);
+      }
+      painter.putImageData(data,0,0);const frame=new VideoFrame(source,{timestamp:(n+3)*33333});
+      const accepted=wait('accepted',n+3);worker.postMessage({type:'frame',frame,id:n+3},[frame]);{const reply=await accepted;offset=reply.offset;delay=reply.delay;}
+    }
+    const halfway=wait('pixels',11);worker.postMessage({type:'render',id:11,wall:offset+delay+3.5*33.333});
+    const object=await halfway;let objectError=0,blendError=0,pixelCount=0;
+    for(let y=30;y<100;y++)for(let x=70;x<150;x++){
+      const fy=127-y,correct=objectPixel(x,fy,6,2),blend=(objectPixel(x,fy,0,0)+objectPixel(x,fy,12,4))/2;
+      objectError+=Math.abs(object.pixels[(y*256+x)*4]-correct);blendError+=Math.abs(blend-correct);pixelCount++;
+    }
+    objectError/=pixelCount;blendError/=pixelCount;
+    console.log('GPU_OBJECT:'+JSON.stringify({objectError,blendError}));
+    if(objectError>=blendError*.75)throw new Error('Foreground interpolation does not improve sufficiently on frame blending');
+    // Static images stay unchanged; hard cuts must not produce a crossfade.
+    const uniform=async(n,r,g,b)=>{
+      painter.fillStyle=`rgb(${r},${g},${b})`;painter.fillRect(0,0,256,128);
+      const frame=new VideoFrame(source,{timestamp:n*33333}),accepted=wait('accepted',n);
+      worker.postMessage({type:'frame',frame,id:n},[frame]);const reply=await accepted;offset=reply.offset;delay=reply.delay;
+    };
+    const sample=async(id,time)=>{
+      const response=wait('pixels',id);worker.postMessage({type:'render',id,wall:offset+delay+time*33.333});return response;
+    };
+    await uniform(6,15,20,25);await uniform(7,15,20,25);
+    const still=await sample(12,6.5);
+    if(still.pixels.some((value,i)=>value!==[15,20,25,255][i%4]))throw new Error('Static image changed');
+    await uniform(8,240,235,230);
+    const before=await sample(13,7.25),after=await sample(14,7.75),cut=await sample(15,8);
+    if(before.pixels[0]!==15||after.pixels[0]!==15||cut.pixels[0]!==240)throw new Error('Hard cut was blended or warped');
+    console.log('PASS: Static images and hard scene cuts preserve source pixels');
+    const workerSource=await (await fetch('worker.js')).text();
+    for(const [stage,needle] of [['Vertex','out vec2 uv;'],['Fragment','precision highp float;']]){
+      const malformed=workerSource.replace(needle,needle+'\ninvalid_shader_token;');
+      const url=URL.createObjectURL(new Blob([malformed],{type:'text/javascript'}));
+      const broken=new Worker(url);let timer;
+      try{
+        await new Promise((resolve,reject)=>{
+          timer=setTimeout(()=>reject(new Error('Shader failure was not reported')),5000);
+          broken.onerror=event=>reject(new Error(event.message));
+          broken.onmessage=({data})=>{
+            if(data.type==='boot'){
+              const canvas=new OffscreenCanvas(32,16);
+              broken.postMessage({type:'start',canvas,manual:true},[canvas]);
+            }else if(data.type==='error'){
+              if(!data.message.replace(/^Error: /,'').startsWith(stage+' shader compilation failed:')||!/error/i.test(data.message))reject(new Error('Missing shader stage/compiler log: '+data.message));
+              else resolve();
+            }
+          };
+        });
+      }finally{clearTimeout(timer);broken.terminate();URL.revokeObjectURL(url);}
+    }
+    console.log('PASS: Vertex and fragment compilation errors report their stage and compiler log');
+    worker.terminate();
+    console.log('TEST_RESULT:'+JSON.stringify({passed:true,error,objectError,blendError}));
+  }catch(error){worker.terminate();console.log('TEST_RESULT:'+JSON.stringify({passed:false,error:String(error),stack:error.stack}));}
+})();
+</script>

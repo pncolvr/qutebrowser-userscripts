@@ -1,0 +1,66 @@
+<!doctype html><meta charset="utf-8"><title>MotionFlow audio mixing test</title>
+<script>
+'use strict';
+const check = (condition, message) => {if (!condition) throw new Error(message);};
+async function exercise(values, delayed, rapid = false) {
+  const ctx = new OfflineAudioContext(2, 48000, 48000), source = ctx.createBufferSource();
+  source.buffer = ctx.createBuffer(values.length, 48000, 48000);
+  values.forEach((value, channel) => source.buffer.getChannelData(channel).fill(value));
+  let sources = 0;
+  const route = new AudioRoute(), video = document.createElement('canvas');
+  video.width = video.height = 1;
+  route.context = {
+    state: 'running', baseLatency: 0, destination: ctx.destination,
+    get currentTime() {return ctx.currentTime;},
+    resume: () => Promise.resolve(),
+    createGain: () => ctx.createGain(), createDelay: maximum => ctx.createDelay(maximum),
+    createMediaElementSource: () => {sources++; return source;}
+  };
+  check(route.setMono(video, true), 'Enable mono');
+  if (delayed) route.follow(video, 80, false);
+  const originalDelay = route.current.delay;
+  const changes = [];
+  // Restore default while delay is active, return to mono, then remove delay.
+  changes.push(ctx.suspend(.2).then(() => {
+    check(route.setMono(video, false), 'Restore default channels');
+    check(route.current.delay === originalDelay, 'Channel toggles retain the delay line');
+    check(route.current.active === delayed, 'Channel toggles retain processing state');
+    return ctx.resume();
+  }));
+  if (rapid) {
+    changes.push(ctx.suspend(.205).then(() => {route.setMono(video, true); return ctx.resume();}));
+    changes.push(ctx.suspend(.21).then(() => {route.setMono(video, false); return ctx.resume();}));
+  }
+  changes.push(ctx.suspend(.4).then(() => {route.setMono(video, true); return ctx.resume();}));
+  changes.push(ctx.suspend(.6).then(() => {route.direct(); return ctx.resume();}));
+  source.start();
+  const rendered = await ctx.startRendering();
+  await Promise.all(changes);
+  const left = rendered.getChannelData(0), right = rendered.getChannelData(1);
+  const expectedMono = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const sample = (at, l, r) => {
+    const i = Math.round(at * 48000);
+    check(Math.abs(left[i] - l) < 1e-5 && Math.abs(right[i] - r) < 1e-5,
+          `Wrong mix at ${at}: ${left[i]},${right[i]} expected ${l},${r}`);
+  };
+  sample(.15, expectedMono, expectedMono);
+  sample(.3, values[0], values[1] ?? values[0]);
+  sample(.5, expectedMono, expectedMono);
+  sample(.75, expectedMono, expectedMono);
+  // Constant input makes an abrupt channel switch measurable as a step.
+  for (let i = 4800; i < left.length; i++) {
+    check(Math.abs(left[i] - left[i - 1]) < .003, `Left channel switch clicked at ${i / 48000}: ${left[i-1]} → ${left[i]} (input ${values}, delayed ${delayed})`);
+    check(Math.abs(right[i] - right[i - 1]) < .003, `Right channel switch clicked at ${i / 48000}: ${right[i-1]} → ${right[i]} (input ${values}, delayed ${delayed})`);
+  }
+  check(sources === 1, 'Switches must reuse one source');
+}
+(async () => {
+  for (const delayed of [false, true]) {
+    await exercise([.8, .2], delayed);
+    await exercise([.7, -.7], delayed);
+    await exercise([.3], delayed);
+    await exercise([.8, .2], delayed, true);
+  }
+  console.log('TEST_RESULT:' + JSON.stringify({passed: true, message: 'Real Web Audio mono/default samples, mono input, phase cancellation, 15ms fades and delayed/direct playback'}));
+})().catch(error => console.log('TEST_RESULT:' + JSON.stringify({passed: false, error: error.stack})));
+</script>

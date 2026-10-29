@@ -1,0 +1,56 @@
+// MotionFlow's own byte/half pixel conversion kernels. No model code here.
+.version 7.0
+.target sm_70
+.address_size 64
+.visible .entry rgba_to_planar(
+ .param .u64 input_ptr, .param .u64 output_ptr, .param .u32 count
+){
+ .reg .pred %p;
+ .reg .b32 %r<10>;
+ .reg .b64 %d<10>;
+ .reg .f32 %f<3>;
+ .reg .b16 %h<3>;
+ ld.param.u64 %d0,[input_ptr]; ld.param.u64 %d1,[output_ptr]; ld.param.u32 %r4,[count];
+ mov.u32 %r0,%ctaid.x; mov.u32 %r1,%ntid.x; mov.u32 %r2,%tid.x;
+ mad.lo.s32 %r3,%r0,%r1,%r2;
+ setp.ge.u32 %p,%r3,%r4; @%p bra PACK_END;
+ mul.wide.u32 %d2,%r3,4; add.s64 %d3,%d0,%d2;
+ mul.wide.u32 %d4,%r3,2; add.s64 %d5,%d1,%d4;
+ mul.wide.u32 %d6,%r4,2; add.s64 %d7,%d5,%d6; add.s64 %d8,%d7,%d6;
+ ld.global.u8 %r5,[%d3]; ld.global.u8 %r6,[%d3+1]; ld.global.u8 %r7,[%d3+2];
+ cvt.rn.f32.u32 %f0,%r5; cvt.rn.f32.u32 %f1,%r6; cvt.rn.f32.u32 %f2,%r7;
+ mul.f32 %f0,%f0,0f3B808081; mul.f32 %f1,%f1,0f3B808081; mul.f32 %f2,%f2,0f3B808081;
+ cvt.rn.f16.f32 %h0,%f0; cvt.rn.f16.f32 %h1,%f1; cvt.rn.f16.f32 %h2,%f2;
+ st.global.u16 [%d5],%h0; st.global.u16 [%d7],%h1; st.global.u16 [%d8],%h2;
+PACK_END: ret;
+}
+.visible .entry planar_to_rgba(
+ .param .u64 input_ptr, .param .u64 output_ptr, .param .u32 count, .param .u64 error_ptr
+){
+ .reg .pred %p<6>;
+ .reg .b32 %r<11>;
+ .reg .b64 %d<11>;
+ .reg .f32 %f<3>;
+ .reg .b16 %h<3>;
+ ld.param.u64 %d0,[input_ptr]; ld.param.u64 %d1,[output_ptr]; ld.param.u32 %r4,[count];
+ ld.param.u64 %d9,[error_ptr];
+ mov.u32 %r0,%ctaid.x; mov.u32 %r1,%ntid.x; mov.u32 %r2,%tid.x;
+ mad.lo.s32 %r3,%r0,%r1,%r2;
+ setp.ge.u32 %p0,%r3,%r4; @%p0 bra UNPACK_END;
+ mul.wide.u32 %d2,%r3,2; add.s64 %d3,%d0,%d2;
+ mul.wide.u32 %d4,%r4,2; add.s64 %d5,%d3,%d4; add.s64 %d6,%d5,%d4;
+ mul.wide.u32 %d7,%r3,4; add.s64 %d8,%d1,%d7;
+ ld.global.u16 %h0,[%d3]; ld.global.u16 %h1,[%d5]; ld.global.u16 %h2,[%d6];
+ cvt.f32.f16 %f0,%h0; cvt.f32.f16 %f1,%h1; cvt.f32.f16 %f2,%h2;
+ testp.finite.f32 %p1,%f0; testp.finite.f32 %p2,%f1; testp.finite.f32 %p3,%f2;
+ and.pred %p4,%p1,%p2; and.pred %p5,%p4,%p3;
+ @!%p5 atom.global.exch.b32 %r10,[%d9],1;
+ mul.f32 %f0,%f0,0f437F0000; mul.f32 %f1,%f1,0f437F0000; mul.f32 %f2,%f2,0f437F0000;
+ add.f32 %f0,%f0,0f3F000000; add.f32 %f1,%f1,0f3F000000; add.f32 %f2,%f2,0f3F000000;
+ max.f32 %f0,%f0,0f00000000; max.f32 %f1,%f1,0f00000000; max.f32 %f2,%f2,0f00000000;
+ min.f32 %f0,%f0,0f437F0000; min.f32 %f1,%f1,0f437F0000; min.f32 %f2,%f2,0f437F0000;
+ cvt.rzi.u32.f32 %r5,%f0; cvt.rzi.u32.f32 %r6,%f1; cvt.rzi.u32.f32 %r7,%f2;
+ st.global.u8 [%d8],%r5; st.global.u8 [%d8+1],%r6; st.global.u8 [%d8+2],%r7;
+ st.global.u8 [%d8+3],255;
+UNPACK_END: ret;
+}

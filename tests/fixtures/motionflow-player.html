@@ -1,0 +1,338 @@
+<!doctype html><meta charset="utf-8">
+<style>
+#movie_player{position:relative;width:720px;height:440px;background:#000}
+.html5-video-container{position:absolute;left:30px;top:25px;z-index:10;transform:translateZ(0);width:640px;height:360px}
+video{position:absolute;left:15px;top:10px;width:600px;height:338px;z-index:20}
+.ytp-right-controls{position:absolute;bottom:0;right:0;z-index:60}
+#captions{position:absolute;left:200px;top:315px;z-index:50;background:black;color:white}
+</style>
+<div id="movie_player"><div class="html5-video-container"><video src="sample30.webm" class="html5-main-video" autoplay muted loop></video></div><span id="captions">Caption</span><div class="ytp-right-controls"></div></div>
+<div style="position:relative;width:720px" id="native-timeline"><div class="ytp-progress-bar" style="width:720px"><div class="ytp-play-progress"></div><div class="ytp-scrubber-container"></div></div><span class="ytp-time-current">0:00</span></div>
+<script nonce="motionflow-test">
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const check=(condition,message)=>{if(!condition)throw new Error(message);console.log('PASS: '+message)};
+async function until(test,timeout=12000){const end=performance.now()+timeout;while(performance.now()<end){const result=await test();if(result)return result;await wait(40)}throw new Error('Timed out: '+test.toString())}
+let nextRequest=1;const pending=new Map();
+addEventListener('message',event=>{if(event.data?.type==='motionflow-test-reply'){pending.get(event.data.id)?.(event.data.result);pending.delete(event.data.id)}});
+const inspect=(action='state')=>new Promise(resolve=>{const id=nextRequest++;pending.set(id,resolve);postMessage({type:'motionflow-test',action,id},'*');setTimeout(()=>{if(pending.has(id)){pending.delete(id);resolve({error:'Isolated-world test bridge did not reply'})}},2000)});
+(async()=>{
+try{
+ const video=document.querySelector('video'),player=document.getElementById('movie_player');
+ const nativeTimeline=document.getElementById('native-timeline');player.append(nativeTimeline);
+ setInterval(()=>{nativeTimeline.querySelector('.ytp-play-progress').style.transform='scaleX('+(video.currentTime/video.duration)+')';nativeTimeline.querySelector('.ytp-time-current').textContent='native '+video.currentTime.toFixed(2)},33);
+ const detail=location.search.includes('detail45'),target=detail?45:60;
+ const neural=location.search.includes('neural');
+ const rate=location.search.includes('test24')?24:30;video.src=`sample${rate}.webm`;await video.play();
+ const options=await until(()=>document.getElementById('qute-motionflow-options'));
+ check(!document.getElementById('qute-motionflow-toggle'),'Only the settings button occupies the toolbar');
+ check((await inspect()).enabled===false,'Starts disabled in qutebrowser isolated user world');
+ check(options.getAttribute('aria-expanded')==='false'&&options.querySelector('svg')&&options.textContent==='', 'Settings use an icon with an accessible state');
+ options.click();
+ const panel=document.getElementById('qute-motionflow-panel');
+ check(options.getAttribute('aria-expanded')==='true'&&!panel.hidden,'Options button opens the settings panel');
+ const profile60=document.getElementById('qute-motionflow-profile-smooth60'),profile45=document.getElementById('qute-motionflow-profile-detail45');
+ check(panel.getAttribute('role')==='menu'&&profile60.getAttribute('role')==='menuitemradio'&&profile60.getAttribute('aria-checked')==='true'&&profile45.getAttribute('aria-checked')==='false','Default FPS is selected independently of processing');
+ const selected=detail?profile45:profile60;
+ const smoothing=document.getElementById('qute-motionflow-smoothing');
+ if(location.search.includes('tail')){
+   const short=location.search.includes('short-tail');
+   video.loop=false;video.pause();video.currentTime=0;
+   await until(()=>!video.seeking&&video.readyState>=3);
+   const choice=document.getElementById('qute-motionflow-buffer-choice');
+   if(short){const memory=document.getElementById('qute-motionflow-buffer-memory');memory.value='8192';memory.dispatchEvent(new Event('change',{bubbles:true}));}
+   choice.value=short?'6000':'1500';choice.dispatchEvent(new Event('change',{bubbles:true}));
+   video.muted=false;video.volume=1;
+   await video.play();smoothing.click();
+   if(!short)await until(async()=>(await inspect()).session?.showing);
+   await inspect('audio');
+   await until(()=>video.ended);
+   const endedAt=performance.now(),tail=await inspect('audio');
+   check(tail.session?.ending&&!tail.session.completed&&tail.audio.active,'Natural source end retains the renderer and delayed audio');
+   check(document.getElementById('qute-motionflow-output'),'Output stays mounted after native playback ends');
+   await wait(300);
+   check((await inspect()).workers===2,'Workers stay alive while the delayed tail drains');
+   if(!short)check((await inspect('audio')).rms>.01,'Final delayed audio samples remain audible after source end');
+   await until(async()=>{const s=await inspect();if(s.state.state==='error')throw new Error(s.state.message);return s.session?.completed&&s.session.frozen},15000);
+   const done=await inspect();
+   check(performance.now()-endedAt>(short?5000:1000),'Completion waits for the actual playback delay');
+   check(done.workers===0&&!done.audio.active&&done.state.state==='ended','Completed tail releases workers and audio delay');
+   check(document.getElementById('qute-motionflow-output').tagName==='CANVAS','The final processed frame remains visible');
+   video.currentTime=1;await video.play();await until(async()=>(await inspect()).session?.showing,15000);
+   check(!(await inspect()).session.completed,'Replay creates a fresh session after the final frame');
+   smoothing.click();console.log('TEST_RESULT:'+JSON.stringify({passed:true,tail:true,short}));return;
+ }
+ if(location.search.includes('controls')){
+   const cover=document.createElement('div');cover.style.cssText='position:fixed;inset:0;z-index:2147483647;background:#1001';document.body.append(cover);
+   player.style.overflow='hidden';
+   const r=panel.getBoundingClientRect();
+   check(panel.matches(':popover-open')&&panel.contains(document.elementFromPoint(r.left+20,r.top+20)),'Settings use the top layer above page overlays and clipping');
+   cover.remove();
+   const knobs=[...options.querySelectorAll('.mf-slider-knob')];
+   await wait(500);const shifted=knobs.map(knob=>getComputedStyle(knob).transform);
+   await wait(250);check(shifted[0]!=='none'&&knobs.every((knob,i)=>getComputedStyle(knob).transform===shifted[i]),'Settings knobs hold their shifted positions while open');
+   options.click();await wait(250);check(knobs.every(knob=>getComputedStyle(knob).transform==='matrix(1, 0, 0, 1, 0, 0)'),'Settings knobs return when the menu closes');options.click();
+   for(const hiddenClass of ['ytp-autohide','ytp-hide-controls']){
+     await inspect('panel-idle');player.classList.add(hiddenClass);await until(()=>panel.hidden);
+     check(options.getAttribute('aria-expanded')==='false'&&!panel.matches(':popover-open'),'YouTube hides its controls and dismisses settings: '+hiddenClass);
+     player.classList.remove(hiddenClass);await wait(80);
+     check(panel.hidden,'Showing the video bar does not reopen settings');
+     options.click();check(!panel.hidden,'Settings can be reopened after the video bar returns');
+   }
+
+   const priority=document.getElementById('qute-motionflow-priority');
+   check(priority.getAttribute('aria-checked')==='true','Prefer smoothness defaults to on');
+   priority.click();check(priority.getAttribute('aria-checked')==='false'&&!(await inspect()).enabled,'Quality priority can be selected without starting playback processing');
+   priority.click();check(priority.getAttribute('aria-checked')==='true','Prefer smoothness can be restored independently');
+
+   const editing=document.getElementById('qute-motionflow-custom-fps');editing.focus();
+   player.classList.add('ytp-autohide');await wait(900);
+   check(!panel.hidden,'Typing in settings protects the panel when native controls auto-hide');
+   player.classList.remove('ytp-autohide');
+   const compare=document.getElementById('qute-motionflow-compare');
+   compare.click();check(compare.getAttribute('aria-checked')==='true'&&!(await inspect()).enabled,'Comparison preference can be selected before processing');
+   compare.click();
+   const mono=document.getElementById('qute-motionflow-mono');
+   check(mono.getAttribute('aria-checked')==='false','Mono defaults to off');
+   mono.click();
+   check(mono.getAttribute('aria-checked')==='true'&&(await inspect()).audio.mono,'Mono can be enabled independently');
+   check(!(await inspect()).enabled&&(await inspect()).workers===0&&!(await inspect()).audio.active,'Mono does not start processing or add delay');
+   mono.click();
+   check(mono.getAttribute('aria-checked')==='false'&&!(await inspect()).audio.mono,'Mono restores default channels');
+   const bufferChoice=document.getElementById('qute-motionflow-buffer-choice'),memoryChoice=document.getElementById('qute-motionflow-buffer-memory');
+   check(bufferChoice.value==='auto'&&memoryChoice.value==='512','Buffer and memory retain their conservative defaults');
+   bufferChoice.value='6000';bufferChoice.dispatchEvent(new Event('change',{bubbles:true}));
+   memoryChoice.value='2048';memoryChoice.dispatchEvent(new Event('change',{bubbles:true}));
+   check(bufferChoice.value==='6000'&&memoryChoice.value==='2048'&&!(await inspect()).enabled,'Long buffers and larger memory budgets do not enable processing');
+   bufferChoice.value='auto';bufferChoice.dispatchEvent(new Event('change',{bubbles:true}));
+   memoryChoice.value='1024';memoryChoice.dispatchEvent(new Event('change',{bubbles:true}));
+   const input=document.getElementById('qute-motionflow-custom-fps');input.scrollIntoView({block:'nearest'});
+   let intercepted=0;const shortcut=e=>{intercepted++;if(/[0-9]/.test(e.key))e.preventDefault()};player.addEventListener('keydown',shortcut);
+   const i=input.getBoundingClientRect();console.log('FPS_TYPING_REQUEST:'+JSON.stringify({x:Math.round(i.left+i.width/2),y:Math.round(i.top+i.height/2)}));
+   await until(()=>input.value==='60'&&document.getElementById('qute-motionflow-profile-custom').getAttribute('aria-checked')==='true');
+   check(!intercepted&&!(await inspect()).enabled,'Real keyboard typing and Enter select 60 FPS without player shortcuts or auto-start');
+   await wait(850);check(input.value==='60','Periodic refresh preserves the typed value');
+   const select=document.getElementById('qute-motionflow-resolution');select.value='1080';select.dispatchEvent(new Event('change',{bubbles:true}));
+   check(!(await inspect()).enabled,'Resolution choice leaves both operation switches off');
+   bufferChoice.value='750';bufferChoice.dispatchEvent(new Event('change',{bubbles:true}));
+   smoothing.click();await until(async()=>(await inspect()).session?.preparing);
+   check(!panel.querySelector('progress').hasAttribute('value')&&panel.querySelector('.mf-buffer-text').textContent.includes('Starting video workers'),'Worker setup uses an indeterminate status instead of reporting a zero frame buffer');
+   const preparationTime=video.currentTime;await wait(100);
+   check(video.paused&&Math.abs(video.currentTime-preparationTime)<.01,'Source playback pauses during worker preparation');
+   await until(async()=>!(await inspect()).session?.preparing&&!video.paused);
+   const progress=document.querySelector('.ytp-play-progress'),clock=document.querySelector('.ytp-time-current');
+   const heldTransform=getComputedStyle(progress).transform,heldTime=clock.textContent,sourceTime=video.currentTime;
+   check(document.querySelectorAll('.ytp-time-current').length===1&&['none','normal'].includes(getComputedStyle(clock,'::after').content),'Only the existing YouTube elapsed timer is used');
+   await wait(100);
+   check(video.currentTime>sourceTime+.03&&getComputedStyle(progress).transform===heldTransform&&clock.textContent===heldTime,'Progress bar and displayed time stay still while the capture buffer fills');
+   await until(async()=>{const s=await inspect();if(s.state.state==='error')throw new Error(s.state.message);return s.session?.showing});
+   check((await inspect()).options.maxFps===60&&(await inspect()).options.interpolation===true,'Smoothing switch starts the renderer at the typed target');
+   check((await inspect()).options.maxBufferBytes===1024*1024*1024,'The renderer receives the selected one-GiB frame-memory budget');
+   profile60.click();profile60.click();check((await inspect()).enabled,'Selecting or reselecting an FPS never toggles smoothing');
+   await until(async()=>(await inspect()).session?.showing);
+   await inspect('warm-up-model');
+   check(!panel.querySelector('progress').hasAttribute('value')&&panel.querySelector('.mf-buffer-text').textContent.includes('Preparing GPU model'),'Model preparation is identified separately from frame buffering');
+   await until(async()=>(await inspect()).session?.showing,15000);
+   check(!video.paused&&(await inspect()).state.state!=='error','Cold GPU warmup restarts source playback and fills the output buffer');
+   check(panel.querySelector('progress').hasAttribute('value'),'Ready frame buffering restores measured progress after setup');
+   compare.click();await until(async()=>(await inspect()).session?.displayedComparison);
+   memoryChoice.value='512';memoryChoice.dispatchEvent(new Event('change',{bubbles:true}));
+   await until(async()=>(await inspect()).session?.preparing);await wait(100);
+   check(video.paused,'Changing output settings pauses playback during preparation');
+   await until(async()=>(await inspect()).session?.showing);
+   check(!video.paused&&(await inspect()).workers===2,'Settings preparation resumes one healthy renderer without scrubbing');
+   await until(async()=>(await inspect()).session?.displayedComparison);
+   check(!panel.hidden&&compare.getAttribute('aria-checked')==='true'&&getComputedStyle(document.getElementById('qute-motionflow-divider')).display==='block','Settings changes preserve the open panel, requested comparison and split output');
+   document.getElementById('qute-motionflow-profile-fps24').click();
+   await until(async()=>{const s=await inspect();return s.session?.showing&&s.session.stats.rateLimited&&s.session.displayedComparison&&panel.querySelector('.mf-smoothing-state').textContent==='Limited to 24 fps'});
+   check(panel.querySelector('.mf-smoothing-state').textContent==='Limited to 24 fps'&&(await inspect()).session.stats.rateSkipped>0,'A lower target drops source frames before motion processing and retains live comparison');
+   input.value='15';input.dispatchEvent(new Event('change',{bubbles:true}));
+   await until(async()=>{const s=await inspect();return s.session?.showing&&s.session.stats.rateLimited&&s.session.displayedComparison&&s.options.maxFps===15});
+   await wait(2200);const capped15=await inspect();
+   check(capped15.session.stats.drawFps>=14&&capped15.session.stats.drawFps<=16&&capped15.session.stats.heldFps<1,'Selected 15 FPS delivers its intended cadence without false stall counts');
+   document.getElementById('qute-motionflow-profile-fps30').click();await until(async()=>(await inspect()).state.state==='native');
+   check(compare.getAttribute('aria-checked')==='true'&&!panel.querySelector('.mf-compare-note').hidden,'An equal FPS target bypasses processing, preserves the toggle and explains why comparison is pending');
+   profile60.click();await until(async()=>(await inspect()).session?.showing&&(await inspect()).session.displayedComparison);
+   await inspect('fail-output');await until(async()=>(await inspect()).state.state==='error');
+   check(options.dataset.state==='error'&&compare.getAttribute('aria-checked')==='true'&&!compare.disabled,'A genuine failure is red and retains the comparison preference');
+   check(panel.querySelector('.mf-compare-note').textContent.includes('Simulated output decoder failure'),'Comparison shows the actual failure instead of claiming to prepare frames');
+   compare.click();await wait(100);
+   check((await inspect()).state.state==='error'&&(await inspect()).workers===0,'Turning comparison off does not start an unsolicited recovery');
+   compare.click();await until(async()=>(await inspect()).session?.showing&&(await inspect()).session.displayedComparison);
+   check(options.dataset.state!=='error'&&compare.getAttribute('aria-checked')==='true','Turning comparison on retries a failed session and restores the matching divider');
+   compare.click();check(compare.getAttribute('aria-checked')==='false','Explicit Off remains authoritative after a restart');
+
+   const capturedAhead=video.currentTime;smoothing.click();
+   await until(async()=>{const s=await inspect();return !s.enabled&&!s.nativeReturn&&!s.workers});
+   check(!video.paused&&video.currentTime<capturedAhead-.2,'Disabling processing returns native playback to the processed position instead of jumping ahead');
+   check(!(await inspect()).audio.nativeHeld&&!document.getElementById('qute-motionflow-return'),'Native handoff releases the held picture and audio');
+   smoothing.click();await until(async()=>(await inspect()).session?.showing);
+   let seekEvents=0;const countedSeek=()=>seekEvents++;video.addEventListener('seeking',countedSeek);
+   await inspect('stall-presenter');
+   await until(async()=>{const s=await inspect();return s.session?.recoveryAttempt===1&&s.session.showing},12000);
+   check(!seekEvents&&!video.paused&&(await inspect()).workers===2,'Stalled frame delivery recovers automatically without a backward seek or worker leaks');
+   await inspect('stall-output');
+   await until(async()=>{const s=await inspect();return s.session?.recoveryAttempt===2&&s.session.showing},12000);
+   check(!seekEvents&&!document.getElementById('qute-motionflow-output').paused&&(await inspect()).workers===2,'An output surface that stops displaying also recovers without seeking');
+   video.removeEventListener('seeking',countedSeek);
+   video.pause();await until(async()=>(await inspect()).session?.frozen);
+   check((await inspect()).workers===0&&!(await inspect()).audio.active,'Pause retains a still pair and releases processing and delayed audio');
+   const canvas=document.getElementById('qute-motionflow-output');
+   check(canvas.tagName==='CANVAS','Paused output is a stable still frame');
+   compare.click();check(compare.getAttribute('aria-checked')==='true'&&getComputedStyle(document.getElementById('qute-motionflow-divider')).display==='block','Compare toggles on immediately while paused');
+   const frozenPixel=canvas.getContext('2d').getImageData(20,20,1,1).data.join(',');
+   await wait(900);check(video.paused&&(await inspect()).workers===0&&canvas.getContext('2d').getImageData(20,20,1,1).data.join(',')===frozenPixel,'Paused comparison stays still without running workers');
+   compare.click();check(compare.getAttribute('aria-checked')==='false'&&getComputedStyle(document.getElementById('qute-motionflow-divider')).display==='none','Compare toggles off immediately while paused');
+   const pausedTarget=(await inspect()).session.displayedMediaTime;
+   smoothing.click();await until(async()=>!(await inspect()).session&&!(await inspect()).nativeReturn);
+   check(video.paused&&Math.abs(video.currentTime-pausedTarget)<.1,'Disabling paused processing restores the matching native frame and stays paused');
+   check((await inspect()).workers===0&&!(await inspect()).audio.active,'Switching smoothing off releases processing and audio delay');
+   document.body.click();check(panel.hidden&&!panel.matches(':popover-open'),'Outside click dismisses the top-layer panel');
+   player.removeEventListener('keydown',shortcut);
+   console.log('TEST_RESULT:'+JSON.stringify({passed:true,controls:true}));return;
+ }
+
+ if(neural){
+   const ai=document.getElementById('qute-motionflow-ai'),animation=document.getElementById('qute-motionflow-content-animation'),live=document.getElementById('qute-motionflow-content-live');
+   check(ai.getAttribute('aria-checked')==='true','AI interpolation is selected explicitly');
+   animation.click();check((await inspect()).contentId==='animation'&&!(await inspect()).enabled,'Animation can be selected without enabling smoothing');
+   live.click();check((await inspect()).contentId==='live','Live-action profile exposes its selected state');
+   if(location.search.includes('animation'))animation.click();
+ }
+
+ for(const control of [options]){
+   const pieces=[...control.children].map(node=>node.getBoundingClientRect()),box=control.getBoundingClientRect();
+   const left=Math.min(...pieces.map(p=>p.left)),right=Math.max(...pieces.map(p=>p.right));
+   check(Math.abs((left+right-box.left*2-box.width)/2)<3&&pieces.every(p=>Math.abs(p.top+p.height/2-box.top-box.height/2)<3),'Toolbar icon and label are centered: '+control.id);
+ }
+ profile60.focus();document.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));
+ check(document.activeElement===profile45,'Arrow navigation moves between profile rows');
+ document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ check(options.getAttribute('aria-expanded')==='false'&&panel.hidden&&document.activeElement===options,'Escape closes the menu and returns focus to its icon');
+ selected.click();check(!(await inspect()).enabled,'FPS selection leaves processing off');
+ smoothing.click();smoothing.click();await wait(80);
+ check((await inspect()).workers===0&&(await inspect()).hosts===0,'Cancelling startup removes its pending static context');
+ smoothing.click();
+ if(['unsupported','transfer-error','host-invalid','offline'].some(test=>location.search.includes(test))){
+   await until(async()=>(await inspect()).state.state==='error');
+   const s=await inspect(),time=video.currentTime;await wait(350);
+   check(!s.workers&&!s.hosts&&!s.audio.active&&!document.getElementById('qute-motionflow-output'),'Missing APIs clean up and retain direct playback');
+   check(video.currentTime>time,'Original playback continues after unsupported-feature error');
+   console.log('TEST_RESULT:'+JSON.stringify({passed:true,unsupported:true}));return;
+ }
+ await until(async()=>{const s=await inspect();if(s.state.state==='error')throw new Error(s.state.message);return s.session?.showing});
+ await wait(neural&&detail?8000:2500);
+ let first=await inspect();console.log('BASELINE:'+JSON.stringify(first.session.stats));
+ if(neural){check(first.session.stats.inferenceFps>=rate*.85,'AI processes the source cadence instead of synthesizing across dropped inputs');}
+ if(neural)check(first.session.stats.engine==='neural'&&first.session.stats.renderer.includes('TensorRT-RTX'),'Playback uses real local RIFE inference');
+ check(first.session.stats.worker&&first.workers===2,'GPU production and native presentation run in separate workers');
+ check(first.hosts===1&&first.hostType==='text/plain','Bundled workers run through a plain static context with restrictive watch-page CSP intact');
+ check(first.session.stats.width===(detail?1920:1280)&&first.session.stats.height===(detail?1080:720),'Selected profile preserves its intended dimensions');
+ check(first.workerURLsTrusted&&first.rejectedWorkerURL,'Workers use TrustedScriptURL objects restricted to bundled Blob URLs');
+ check(selected.getAttribute('aria-checked')==='true'&&options.dataset.enabled==='true','Smoothing toggle starts processing at the selected FPS');
+ options.click();console.log('MOTIONFLOW_MENU_PREVIEW');await wait(200);options.click();
+ check(first.session.stats.heldFps<3,'Steady playback has few held output frames');
+ player.classList.add('ytp-autohide');check(getComputedStyle(document.getElementById('qute-motionflow-status')).opacity==='0','Status disappears with the player controls');player.classList.remove('ytp-autohide');
+ await wait(4200);check(document.getElementById('qute-motionflow-status').hidden,'Status message expires without persistent statistics');
+ options.click();player.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));player.click();
+ check(panel.hidden,'Clicking outside dismisses the settings menu');
+ console.log('COMPOSITOR_BASELINE_BEGIN');await wait(600);console.log('COMPOSITOR_BASELINE_END');
+ const overlay=document.getElementById('qute-motionflow-output');
+ const v=video.getBoundingClientRect(),o=overlay.getBoundingClientRect();
+ check(['left','top','width','height'].every(k=>Math.abs(v[k]-o[k])<1),'Picture stays aligned through nested video containers');
+ overlay.style.pointerEvents='auto';
+ check(document.elementFromPoint(v.left+v.width*.25,v.top+v.height*.25)===overlay,'Processed picture is composited above native video');
+ const c=document.getElementById('captions').getBoundingClientRect();
+ check(document.elementFromPoint(c.left+2,c.top+2).id==='captions','Captions remain above processed video');
+ overlay.style.pointerEvents='none';
+ options.click();document.getElementById('qute-motionflow-compare').click();
+ check(document.getElementById('qute-motionflow-compare').getAttribute('aria-checked')==='true','Comparison switch reports its checked state');
+ options.click();
+ overlay.style.pointerEvents='auto';
+ await until(async()=>(await inspect()).session?.displayedComparison);
+ check(document.elementFromPoint(v.left+v.width*.25,v.top+v.height*.25)===overlay,'Delayed original is composed into the same output surface');
+ check(document.elementFromPoint(v.left+v.width*.75,v.top+v.height*.25)===overlay,'Comparison keeps processed right half on the shared clock');
+ overlay.style.pointerEvents='none';
+ const divider=document.getElementById('qute-motionflow-divider');
+ divider.focus();divider.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));
+ await until(()=>divider.getAttribute('aria-valuenow')==='48');
+ check(Math.abs(divider.getBoundingClientRect().left+12-(v.left+v.width*.48))<2,'Keyboard divider tracks the split in the displayed frame');
+ console.log('DIVIDER_DRAG_REQUEST');
+ await until(()=>Number(divider.getAttribute('aria-valuenow'))>=68);
+ check(!video.paused,'Dragging the divider does not pause the source video');
+ video.style.height='400px';video.style.width='500px';await wait(150);
+ const letterbox=video.getBoundingClientRect(),lineBox=divider.getBoundingClientRect();
+ const pictureHeight=500*video.videoHeight/video.videoWidth;
+ check(Math.abs(lineBox.height-pictureHeight)<2&&Math.abs(lineBox.top-(letterbox.top+(400-pictureHeight)/2))<2,'Divider follows the picture inside letterboxing');
+ video.style.height='';video.style.width='';await wait(100);
+ options.click();document.getElementById('qute-motionflow-compare').click();options.click();
+ await until(async()=>!(await inspect()).session?.displayedComparison);
+ const audioWait=Math.ceil(first.audio.delayMs+160);
+ video.muted=false;await inspect('audio');await wait(audioWait);const loud=(await inspect('audio')).rms;
+ check(loud>0.01,'Delayed path carries actual audio samples');
+ video.volume=.25;await wait(audioWait);const quiet=(await inspect('audio')).rms;
+ check(quiet>0.001&&quiet<loud*.4,'Native volume still controls delayed audio');
+ video.muted=true;await wait(audioWait);check((await inspect('audio')).rms<0.0001,'Native mute still works');video.volume=1;
+ // Rendering must keep pacing while the page thread repeatedly cannot run.
+ console.log('COMPOSITOR_STRESS_BEGIN');
+ for(let i=0;i<8;i++){await wait(170);const end=performance.now()+100;while(performance.now()<end){}}
+ console.log('COMPOSITOR_STRESS_END');
+ const loaded=await inspect();console.log('MAIN_THREAD_STRESS:'+JSON.stringify(loaded.session.stats));
+ if(neural)check(loaded.session.stats.processedFrames>=loaded.session.stats.framesReceived-loaded.session.stats.skippedSources-6&&loaded.session.stats.skippedSources<=first.session.stats.skippedSources+2,'AI processes captured source frames during page stalls without discarding them');
+ check(loaded.session.stats.drawFps>=target*.9,'Worker sustains the chosen target during 100 ms page stalls');
+ check(loaded.session.stats.heldFps<4,'Buffered interpolation covers page-thread delivery gaps');
+ check(loaded.session.stats.frameStepP95<(detail?36:25),'Worker presentation pacing remains regular under page load');
+ options.click();const diagnostic=document.getElementById('qute-motionflow-diagnostics');diagnostic.click();
+ await until(()=>diagnostic.getAttribute('aria-checked')==='true');check(!document.getElementById('qute-motionflow-diagnostic-overlay').hidden,'Diagnostics toggle live statistics on the video');diagnostic.click();check(document.getElementById('qute-motionflow-diagnostic-overlay').hidden,'Diagnostics toggle hides live statistics');options.click();
+ if(!detail&&rate===30){
+   const fullscreen=document.createElement('button');fullscreen.textContent='FS';
+   fullscreen.style.cssText='position:fixed;left:740px;top:520px;width:40px;height:40px;z-index:100';document.body.append(fullscreen);
+   const entered=new Promise((resolve,reject)=>fullscreen.addEventListener('click',()=>player.requestFullscreen().then(resolve,reject),{once:true}));
+   console.log('FULLSCREEN_REQUEST');await entered;fullscreen.remove();
+   await until(()=>document.fullscreenElement===player);await until(async()=>(await inspect()).session?.showing);await wait(1300);
+   const full=await inspect();check(full.session.stats.drawFps>=54&&full.hosts===1,'Worker presentation remains at display rate in fullscreen');
+   await document.exitFullscreen();
+ }
+ if(neural){
+   const before=(await inspect()).contentId;
+   document.getElementById('qute-motionflow-content-'+(before==='live'?'animation':'live')).click();
+   await until(async()=>(await inspect()).session?.showing);
+   check((await inspect()).enabled&&(await inspect()).workers===2,'Content profile changes keep smoothing enabled without worker leaks');
+   document.getElementById('qute-motionflow-content-'+before).click();
+   await until(async()=>(await inspect()).session?.showing);
+ }
+ // Switching profiles live must restart only one pair of workers, preserve
+ // playback and leave the selected profile ready for subsequent lifecycle tests.
+ options.click();(detail?profile60:profile45).click();
+ await until(async()=>{const s=await inspect();return s.session?.showing&&s.session.stats.width===(detail?1280:1920)});
+ check((await inspect()).workers===2,'Live profile change replaces workers without leaks');
+ (detail?profile45:profile60).click();
+ await until(async()=>{const s=await inspect();return s.session?.showing&&s.session.stats.width===(detail?1920:1280)});
+ options.click();
+ video.playbackRate=target/rate;
+ await until(async()=>(await inspect()).state.state==='native');
+ await wait(600);check((await inspect()).state.state==='native'&&!(await inspect()).audio.active,'Already-fast video bypasses FPS processing and audio delay in Auto resolution');
+ video.playbackRate=1;await until(async()=>!!(await inspect()).session?.showing);
+ video.currentTime=1;await until(async()=>!!(await inspect()).session?.showing);
+ smoothing.click();await until(async()=>!(await inspect()).session);
+ check((await inspect()).workers===0&&(await inspect()).hosts===0&&!(await inspect()).audio.active,'Toggle off releases both workers, static context and audio delay');
+ smoothing.click();await until(async()=>!!(await inspect()).session?.showing);
+ const closesBeforeReload=(await inspect()).closedCaptures.length;
+ video.load();await until(async()=>(await inspect()).closedCaptures.length>closesBeforeReload);
+ check((await inspect()).closedCaptures.every(count=>count===0),'Reloading the source releases old captured tracks before autoplay can restart');
+ await video.play();await until(async()=>!!(await inspect()).session?.showing);
+ video.pause();await until(async()=>(await inspect()).session?.frozen);
+ check(document.getElementById('qute-motionflow-output').tagName==='CANVAS','Pause retains the matching frame pair for comparison');
+ let stopped=await inspect();check(stopped.workers===0&&stopped.hosts===0&&!stopped.audio.active,'Pause closes worker and bypasses added audio delay');
+ await video.play();await until(async()=>!!(await inspect()).session?.showing);
+ check((await inspect()).audioSources===1,'Resume reuses the media audio source');
+ player.classList.add('ad-showing');await until(async()=>!(await inspect()).session);
+ check((await inspect()).workers===0,'Advertisements release worker and capture');
+ player.classList.remove('ad-showing');await until(async()=>!!(await inspect()).session?.showing);
+ history.pushState({},'','/watch?v=next');document.dispatchEvent(new Event('yt-navigate-finish'));
+ check(document.getElementById('qute-motionflow-options').dataset.enabled==='false','New video resets smoothing');
+ const final=await inspect();check(final.workers===0&&final.hosts===0&&!final.audio.active,'Navigation leaves direct audio and no worker');
+ check(final.closedCaptures.every(count=>count===0),'Every stopped session releases its captured tracks');
+ console.log('TEST_RESULT:'+JSON.stringify({passed:true,stress:loaded.session.stats}));
+}catch(error){console.log('TEST_RESULT:'+JSON.stringify({passed:false,error:String(error),stack:error.stack,state:await inspect()}));}
+})();
+</script>
