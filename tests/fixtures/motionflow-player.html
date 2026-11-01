@@ -80,9 +80,8 @@ try{
    }
 
    const priority=document.getElementById('qute-motionflow-priority');
-   check(priority.getAttribute('aria-checked')==='true','Prefer smoothness defaults to on');
-   priority.click();check(priority.getAttribute('aria-checked')==='false'&&!(await inspect()).enabled,'Quality priority can be selected without starting playback processing');
-   priority.click();check(priority.getAttribute('aria-checked')==='true','Prefer smoothness can be restored independently');
+   check(priority.disabled&&priority.getAttribute('aria-checked')==='true','Prefer smoothness retains its default preference but is disabled while smoothing is off');
+   priority.click();check(priority.getAttribute('aria-checked')==='true'&&!(await inspect()).enabled,'Inactive smoothness priority cannot change or start processing');
 
    const editing=document.getElementById('qute-motionflow-custom-fps');editing.focus();
    player.classList.add('ytp-autohide');await wait(900);
@@ -126,6 +125,7 @@ try{
    check(video.currentTime>sourceTime+.03&&getComputedStyle(progress).transform===heldTransform&&clock.textContent===heldTime,'Progress bar and displayed time stay still while the capture buffer fills');
    await until(async()=>{const s=await inspect();if(s.state.state==='error')throw new Error(s.state.message);return s.session?.showing});
    check((await inspect()).options.maxFps===60&&(await inspect()).options.interpolation===true,'Smoothing switch starts the renderer at the typed target');
+   check(!priority.disabled,'Prefer smoothness becomes available when smoothing is enabled');
    check((await inspect()).options.maxBufferBytes===1024*1024*1024,'The renderer receives the selected one-GiB frame-memory budget');
    profile60.click();profile60.click();check((await inspect()).enabled,'Selecting or reselecting an FPS never toggles smoothing');
    await until(async()=>(await inspect()).session?.showing);

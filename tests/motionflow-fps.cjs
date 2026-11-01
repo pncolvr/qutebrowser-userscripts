@@ -135,14 +135,17 @@ async function exercise(
   assert.ok(messages.some(m => m.type === 'end'), 'End-of-stream must drain without hanging');
   if (engine === 'optical') await self.onmessage({data: {type: 'snapshot'}});
   const frames = messages.filter(m => m.type === 'batch').flatMap(m => m.frames);
-  const expected = Math.min(count, Math.ceil((count / sourceFps) * target));
+  const native = !interpolation && !resize;
+  const expected = native ? 0 :
+      interpolation ? Math.min(count, Math.ceil((count / sourceFps) * target)) : count;
   assert.ok(
       Math.abs(frames.length - expected) <= 1,
       `FPS ${sourceFps}→${target}: got ${frames.length}, expected ${
           expected} (plus final endpoint)`);
-  assert.equal(
-      frames.at(-1).frame.pixels[0], (count - 1) % 256,
-      'The exact final source frame survives the cap');
+  if (!native)
+    assert.equal(
+        frames.at(-1).frame.pixels[0], (count - 1) % 256,
+        'The exact final source frame survives processing');
   assert.ok(
       Math.abs(messages.find(m => m.type === 'end').time - count * 1000 / sourceFps) < .01,
       'Duration and audio clock stay at original speed');
@@ -163,12 +166,15 @@ async function exercise(
     assert.equal(
         copies, resize ? frames.length : 0, 'Discarded frames are never copied or converted');
   }
-  assert.equal(messages.filter(m => m.type === 'cadence').at(-1).fps, Math.min(sourceFps, target));
-  if (sourceFps > target) {
-    const stats = reports.filter(m => m.type === 'producer-stats').at(-1);
-    assert.equal(stats.rateLimited, true);
-    assert.equal(stats.rateSkipped, count - frames.length);
-  }
+  if (native)
+    assert.ok(messages.some(m => m.type === 'native'), 'Smoothing off bypasses FPS processing');
+  else
+    assert.equal(
+        messages.filter(m => m.type === 'cadence').at(-1).fps,
+        interpolation ? Math.min(sourceFps, target) : sourceFps);
+  const stats = reports.filter(m => m.type === 'producer-stats').at(-1);
+  assert.equal(stats.rateLimited, interpolation && sourceFps > target / .98);
+  assert.equal(stats.rateSkipped, interpolation ? count - frames.length : 0);
   await self.onmessage({data: {type: 'stop'}});
   assert.ok(
       created.every(f => f.closed),
@@ -180,6 +186,8 @@ async function exercise(
   for (const [sourceFps, target] of [[60, 30], [60, 24], [60, 15], [59.94, 23.976], [120, 5]])
     for (const interpolation of [false, true]) await exercise({sourceFps, target, interpolation});
   await exercise({sourceFps: 24, target: 60});
+  await exercise({resize: false});
+  await exercise({engine: 'optical', resize: false});
   await exercise({resize: false, interpolation: true});
   await exercise({engine: 'optical', resize: false, interpolation: true});
   await exercise(

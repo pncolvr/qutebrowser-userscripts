@@ -571,14 +571,16 @@ function motionWorker() {
       }
       lastSourceTime = time;
       framesReceived++;
-      const capped = !manual && sourceFps() > bootOptions.maxFps / .98;
+      const capped = !manual && bootOptions.interpolation !== false &&
+          sourceFps() > bootOptions.maxFps / .98;
       if (capped !== rateLimited) {
         rateLimited = capped;
         native = false;
         reset();
         if (capped) port.postMessage({type: 'cadence', fps: bootOptions.maxFps});
       }
-      if (sourcePeriods.length >= 12 && !manual && !rateLimited) {
+      if (!manual && !rateLimited &&
+          (bootOptions.interpolation === false || sourcePeriods.length >= 12)) {
         const enough = bootOptions.interpolation === false || sourceFps() >= bootOptions.maxFps * .98;
         if (enough !== native) {
           native = enough;
@@ -1073,10 +1075,12 @@ function neuralWorker() {
         return;
       }
       const bytes = pendingSize(frame, input, bypass);
+      const inputFps = options.interpolation === false ? source || 30 :
+          enough ? Math.min(source || options.maxFps, options.maxFps) : source || 30;
       const goal =
           Math.ceil(
               Math.max(400, options.bufferMs ?? (options.delayMs ?? 220) - 150) *
-              (enough ? Math.min(source || options.maxFps, options.maxFps) : source || 30) / 1000) +
+              inputFps / 1000) +
           2;
       captureQueueLimit =
           Math.max(1, Math.min(180, goal, Math.floor(queueBudget / Math.max(1, bytes))));
@@ -1128,9 +1132,9 @@ function neuralWorker() {
                 source >= options.maxFps * .98;
             const captured = sorted.length ? 1000 / sorted[Math.floor(sorted.length / 2)] : source;
             captureLimited = enough && periods.length >= 12 && captured < source * .85;
-            rateLimited = source > options.maxFps / .98;
+            rateLimited = options.interpolation !== false && source > options.maxFps / .98;
             const bypass = enough && !options.resize && !rateLimited;
-            if (enough && !bypass) {
+            if (options.interpolation !== false && enough && !bypass) {
               const step = 1000 / options.maxFps;
               if (nextCaptureTime !== null && time < nextCaptureTime - .001) {
                 rateSkipped++;
@@ -1209,8 +1213,9 @@ function neuralWorker() {
           await rpc({type: 'reset'});
           port.postMessage({type: native ? 'native' : 'reset'});
         }
-        // Resizing without interpolation keeps slower sources and caps faster ones.
-        const cadence = enough && source > 0 ? Math.min(source, options.maxFps) : options.maxFps;
+        // Upscaling alone preserves source cadence regardless of the selected target.
+        const cadence = options.interpolation === false ? source || 30 :
+            enough && source > 0 ? Math.min(source, options.maxFps) : options.maxFps;
         outputFps = cadence;
         if (Math.abs(cadence - outputCadence) > .5) {
           outputCadence = cadence;
@@ -1312,7 +1317,7 @@ function neuralWorker() {
               full: lastInput.full
             },
             lastInput.pixels, (bytes, item) => {
-              const step = 1000 / options.maxFps;
+              const step = 1000 / (outputFps || options.maxFps);
               for (let t = lastOutputTime === null ?
                        item.time :
                        Math.max(lastOutputTime + step, item.time - 24 * step);
@@ -1989,8 +1994,7 @@ class AdaptiveQuality {
     for (const h of [2160, 1440, 1080, 720])
       if (h < height - 2 && h > floor + 2) this.levels.push({height: h, method});
     const lowest = this.levels.at(-1).height;
-    if (method === 'ai') this.levels.push({height: lowest, method: 'lanczos'});
-    if (floor < lowest - 2) this.levels.push({height: floor, method: 'lanczos'});
+    if (floor < lowest - 2) this.levels.push({height: floor, method});
   }
   get effective() {
     return this.levels?.[this.level];
@@ -3125,21 +3129,23 @@ function labelButton(control, label, title) {
 }
 function playbackOptions() {
   const profile = PROFILES[profileId];
+  const smoothnessPriority = smoothingEnabled && prioritizeSmoothness;
   const requested = outputSizing(element, profile, resolutionId, neuralEnabled && upscaleEnabled);
   adaptiveQuality.configure({
     key: [key, profileId, customFps, contentId, resolutionId, smoothingEnabled].join('|'),
-    enabled: prioritizeSmoothness && neuralEnabled && upscaleEnabled && requested.upscaling,
+    enabled: smoothnessPriority && neuralEnabled && upscaleEnabled && requested.upscaling,
     height: requested.outputHeight,
     sourceHeight: element?.videoHeight || requested.outputHeight,
     method: upscaleMethod
   });
   const effective = adaptiveQuality.effective;
   const sizing = adaptiveSizing(element, requested, effective.height);
-  const automatic = neuralEnabled ? (profile.maxFps <= 45 ? 650 : 400) +
+  const lowFps = smoothingEnabled && profile.maxFps <= 45;
+  const automatic = neuralEnabled ? (lowFps ? 650 : 400) +
           (contentId === 'animation' || contentId === 'general' ? 50 :
                contentId === 'gameplay'                         ? -100 :
                                                                   0) :
-                                    (profile.maxFps <= 45 ? 450 : 320);
+                                    (lowFps ? 450 : 320);
   return {
     ...profile,
     ...sizing,
@@ -3150,7 +3156,7 @@ function playbackOptions() {
     upscaleMethod: effective.method,
     requestedUpscaleMethod: upscaleMethod,
     requestedOutputHeight: requested.outputHeight,
-    smoothnessPriority: prioritizeSmoothness,
+    smoothnessPriority,
     smoothnessPriorityActive: adaptiveQuality.level > 0,
     engine: neuralEnabled ? 'neural' : 'optical',
     content: contentId,
@@ -3249,7 +3255,7 @@ function paint() {
   profileButtons.get('custom').querySelector('.mf-label').textContent = 'Custom';
   panel.querySelector('.mf-performance-note').hidden =
       !(selectedOptions.upscale && selectedOptions.upscaleMethod === 'ai' ||
-        selectedOptions.outputHeight > 1080 || selectedOptions.maxFps > 60);
+        selectedOptions.outputHeight > 1080 || smoothingEnabled && selectedOptions.maxFps > 60);
   panel.querySelector('.mf-performance-note').textContent =
       (selectedOptions.upscale && selectedOptions.upscaleMethod === 'ai' ?
            'AI infers detail and may alter textures. ' :
@@ -3277,20 +3283,19 @@ function paint() {
           ' · ' + (element?.videoWidth || 0) + '×' + (element?.videoHeight || 0) + ' → ' +
           selectedOptions.outputWidth + '×' + selectedOptions.outputHeight;
   priorityButton.setAttribute('aria-checked', String(prioritizeSmoothness));
+  priorityButton.disabled = !smoothingEnabled;
   labelButton(
       priorityButton, 'Prefer smoothness: ' + (prioritizeSmoothness ? 'On' : 'Off'),
-      'Keep AI detail while it sustains playback; reduce effective resolution if overloaded, then fall back to Lanczos. Off always uses your requested quality. Target FPS stays selected.');
+      'Applies only while motion smoothing is on. Reduce effective resolution if overloaded while keeping your selected upscaler. Off always uses your requested quality. Target FPS stays selected.');
   const priorityNote = panel.querySelector('.mf-priority-note');
   priorityNote.hidden = !selectedOptions.smoothnessPriorityActive;
-  priorityNote.textContent = (selectedOptions.upscaleMethod === 'ai' ? 'AI' :
-                                  upscaleMethod === 'ai'             ? 'Lanczos fallback' :
-                                                                       'Lanczos') +
+  priorityNote.textContent = (selectedOptions.upscaleMethod === 'ai' ? 'AI' : 'Lanczos') +
       ' · ' + selectedOptions.outputHeight + 'p effective · ' + RESOLUTIONS[resolutionId] +
       ' requested. Your selection is retained.';
   smoothingButton.setAttribute('aria-checked', String(smoothingEnabled));
   labelButton(
       smoothingButton, 'Motion smoothing: ' + (smoothingEnabled ? 'On' : 'Off'),
-      'Interpolate slower video or limit faster video to the selected FPS. Upscaling also honors a lower FPS target when this switch is off.');
+      'Interpolate slower video or limit faster video to the selected FPS. With smoothing off, upscaling retains the source frame rate.');
   const smoothing = !smoothingEnabled      ? 'Off' :
       session?.completed                   ? 'Finished' :
       session?.frozen || session?.freezing ? 'Paused' :
@@ -3343,7 +3348,7 @@ function paint() {
   diagnosticOverlay.textContent = [
     CONTENTS[contentId] + ' · ' + (neuralEnabled ? 'Local AI' : 'Browser'),
     'Motion smoothing: ' + smoothing, 'Upscaling: ' + scaling,
-    'Priority: ' + (prioritizeSmoothness ? 'Smoothness' : 'Selected detail') +
+    'Priority: ' + (selectedOptions.smoothnessPriority ? 'Smoothness' : 'Selected detail') +
         (selectedOptions.smoothnessPriorityActive ?
              ' · ' + selectedOptions.upscaleMethod + ' ' + selectedOptions.outputHeight + 'p' :
              ''),
@@ -3394,7 +3399,7 @@ function paint() {
     labelButton(
         control, PROFILES[id].maxFps + ' fps' + (selected ? ': Selected' : ': Select target'),
         'Interpolate lower frame rates up to ' + PROFILES[id].maxFps +
-            ' fps; faster video is capped before processing. Upscaling also honors this cap with smoothing off. Resolution is selected separately.');
+            ' fps; faster video is capped before processing. Applies only while motion smoothing is on. Resolution is selected separately.');
     control.setAttribute('aria-checked', String(selected));
   }
   aiButton.setAttribute('aria-checked', String(neuralEnabled));
@@ -3638,7 +3643,7 @@ function toggleSmoothing() {
 function selectProfile(id) {
   if (profileId === id) return;
   profileId = id;
-  if (enabled) stopForSettings();
+  if (enabled && smoothingEnabled) stopForSettings();
   reconcile();
 }
 function focusMenu(last = false) {
@@ -3717,7 +3722,7 @@ function controls() {
       const changed = customFps !== value || profileId !== 'custom';
       customFps = value;
       profileId = 'custom';
-      if (enabled && changed) stopForSettings();
+      if (enabled && smoothingEnabled && changed) stopForSettings();
       reconcile();
     }
     customInput.addEventListener('change', commitCustomFps);

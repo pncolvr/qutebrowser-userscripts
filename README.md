@@ -140,8 +140,9 @@ off; replacing the player within the same video page retains your choices.
   may be unavailable; the panel shows the error without taking over its audio.
 - **FPS:** 24, 30, 45, 60, or a custom value from 1–240 (including fractional FPS).
   FPS choices only select the target; they never enable or disable processing.
-  A lower target caps faster video by selecting source frames before pixel copying,
-  transfer or upscaling. Upscaling honors this cap even with motion smoothing off.
+  With motion smoothing on, a lower target caps faster video by selecting source
+  frames before pixel copying, transfer or upscaling. With smoothing off,
+  upscaling retains the source frame rate regardless of the selected target.
   A higher target interpolates only when motion smoothing is on. Dropped frames
   retain source timestamps; playback speed and the audio timeline do not change.
   Type a custom value and press Enter or leave the field to select it. With this
@@ -181,10 +182,12 @@ off; replacing the player within the same video page retains your choices.
   handles non-aligned widths such as 854px without leaving unwritten pixels
   along the right edge.
   Model weights require about 7 MiB of additional downloads and no PyTorch.
-- **Prefer smoothness:** on by default. Starts at your requested resolution and
+- **Prefer smoothness:** on by default, and applies only while motion smoothing
+  is on. Upscaling alone uses your requested resolution and upscaler.
+  Starts at your requested resolution and
   upscaler. Sustained processing or delivery overload reduces the effective
-  resolution while keeping AI enabled; Lanczos is the fallback after lower AI
-  resolutions cannot keep up. Sustained spare capacity lets it try higher quality
+  resolution while retaining your selected upscaler, down to the source resolution.
+  It never switches AI to Lanczos. Sustained spare capacity lets it try higher quality
   again, with a cooldown after a failed attempt. Normal holds at a selected
   lower FPS do not justify reducing quality: starvation must also show delivery
   below the effective FPS target. Processing overload and growing backlogs still
@@ -241,17 +244,18 @@ off; replacing the player within the same video page retains your choices.
   It does not print diagnostics to the console.
 
 The panel separately reports **Motion smoothing** and **Upscaling** states.
-Videos above the selected FPS are capped without estimating intermediate motion;
-only retained frames are upscaled. A plain cap without resizing passes captured
+With smoothing on, videos above the selected FPS are capped without estimating
+intermediate motion; only retained frames are upscaled. A plain cap without resizing passes captured
 video frames directly to the presenter, without sending frame pixels to the helper.
 With a matching target (within the FPS detection tolerance) and no explicit
-resize, the original video and audio bypass processing. Slower sources keep their FPS during upscaling alone; motion smoothing
-can interpolate them up to the target. Every content profile follows these rules.
+resize, the original video and audio bypass processing. Upscaling alone keeps the
+source FPS regardless of the selected target; motion smoothing can interpolate
+slower sources up to the target. Every content profile follows these rules.
 The final source frame and original clip duration are retained when a cap is active.
 If browser capture is slow, a warning reports the limitation; your selected
 resizing continues. High resolution/FPS combinations remain selectable even
-when they may stutter or drop frames. Prefer smoothness can reduce effective
-upscaling quality; requested controls and target FPS are never changed.
+when they may stutter or drop frames. While smoothing is on, Prefer smoothness can
+reduce effective upscaling quality; requested controls and target FPS are never changed.
 
 Prepared frame memory defaults to **512 MiB** and can be raised to **8 GiB**;
 larger pictures automatically shorten the effective buffer when it reaches the
@@ -455,7 +459,7 @@ source and precompiled PTX ship together; the regeneration command is in
 The producer stream checks (`node tests/motionflow-neural-stream.cjs`) exercise
 normal EOF and explicit finishing through outstanding RPCs and held animation
 frames, capture backlog and per-output processing telemetry. Adaptive-quality
-checks cover AI-first startup, resolution-before-filter fallback and recovery
+checks cover AI-first startup, resolution adaptation without switching upscalers and recovery
 cooldowns. Timer checks verify that the existing YouTube span is reused.
 Presenter checks cover complete finite streams and short buffered clips.
 

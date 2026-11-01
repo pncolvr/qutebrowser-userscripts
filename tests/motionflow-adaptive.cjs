@@ -32,13 +32,15 @@ const sample = (work, extra = {}) => q.sample({
 assert.equal(sample(24), false);
 assert.equal(sample(24), true);
 assert.equal(q.effective.method, 'ai');
-assert.equal(q.effective.height, 1080, 'Lower AI resolution precedes a filter fallback');
+assert.equal(q.effective.height, 1080, 'Overload lowers resolution while retaining AI');
 for (let i = 0; i < 10 && q.effective.height > 720; i++) sample(24);
 assert.equal(q.effective.method, 'ai');
 assert.equal(q.effective.height, 720);
-for (let i = 0; i < 10 && q.effective.method === 'ai'; i++) sample(24);
-assert.equal(
-    q.effective.method, 'lanczos', 'Lanczos is a fallback only after lower AI levels fail');
+for (let i = 0; i < 20; i++) {
+  sample(24);
+  assert.equal(q.effective.method, 'ai', 'Sustained overload cannot switch AI to Lanczos');
+}
+assert.equal(q.effective.height, 480, 'Adaptation stops at the source resolution');
 const level = q.level;
 for (let i = 0; i < 18; i++) sample(4);
 assert.equal(q.level, level, 'Failed higher quality does not immediately oscillate back');
@@ -62,7 +64,7 @@ assert.equal(sized.outputHeight, 720);
 assert.equal(sized.maxFps, 60);
 assert.ok(Math.abs(sized.outputWidth / sized.outputHeight - 854 / 480) < .003);
 console.log(
-    'PASS: AI-first adaptation, resolution-before-fallback, warmup guards, recovery hysteresis, Off and aspect/FPS preservation');
+    'PASS: AI-preserving resolution adaptation, warmup guards, recovery hysteresis, Off and aspect/FPS preservation');
 
 q.configure({...requested, key: 'transport-backlog'});
 sample(4, {showing: false, deliveredFps: 20, queued: 8});
@@ -122,6 +124,14 @@ assert.equal(opts.upscaleMethod, 'ai');
 assert.equal(opts.outputHeight, 1080);
 assert.equal(optionsContext.resolutionId, '1440');
 assert.equal(opts.maxFps, 60);
+for (let i = 0; i < 20; i++) {
+  optionsContext.adaptiveQuality.sample({now: 5000 + i * 1000, readyAt: 0, fps: 60, workMs: 25});
+  opts = optionsContext.playbackOptions();
+  assert.equal(opts.upscaleMethod, 'ai', 'Playback options retain AI through every downgrade');
+}
+assert.equal(opts.outputHeight, 480);
+assert.equal(optionsContext.resolutionId, '1440', 'Overload retains the requested resolution');
+assert.equal(opts.maxFps, 60, 'Overload retains the selected FPS');
 optionsContext.toggleSmoothnessPriority();
 opts = optionsContext.playbackOptions();
 assert.equal(opts.outputHeight, 1439);
@@ -135,6 +145,38 @@ assert.equal(
     'Turning adaptive monitoring on alone does not restart full-quality playback');
 console.log(
     'PASS: Actual playback options retain AI-first behavior, requested controls and FPS, and Off restores full quality');
+
+// Turning smoothing off restores full upscaling quality and disables monitoring.
+for (let i = 0; i < 2; i++)
+  optionsContext.adaptiveQuality.sample({now: 30000 + i * 1000, readyAt: 0, fps: 60, workMs: 25});
+assert.equal(optionsContext.playbackOptions().outputHeight, 1080);
+optionsContext.smoothingEnabled = false;
+opts = optionsContext.playbackOptions();
+assert.equal(opts.outputHeight, 1439, 'Upscaling alone restores the requested resolution');
+assert.equal(opts.smoothnessPriority, false);
+assert.equal(opts.smoothnessPriorityActive, false);
+assert.equal(opts.interpolation, false);
+assert.equal(optionsContext.prioritizeSmoothness, true, 'Keep the preference for smoothing');
+for (let i = 0; i < 20; i++)
+  assert.equal(
+      optionsContext.adaptiveQuality.sample({
+        now: 40000 + i * 1000, readyAt: 0, fps: 60, workMs: 100, deliveredFps: 5, queued: 20
+      }),
+      false, 'Overloaded upscaling alone cannot activate smoothness adaptation');
+assert.equal(optionsContext.playbackOptions().outputHeight, 1439);
+optionsContext.PROFILES.fps15 = {maxFps: 15};
+vm.runInContext(
+    main.slice(main.indexOf('function selectProfile('), main.indexOf('function focusMenu(')),
+    optionsContext);
+const stopsBeforeTarget = optionsContext.stops;
+optionsContext.selectProfile('fps15');
+assert.equal(optionsContext.stops, stopsBeforeTarget, 'An inactive FPS target cannot restart upscaling');
+assert.equal(optionsContext.playbackOptions().smoothnessPriority, false);
+optionsContext.smoothingEnabled = true;
+assert.equal(optionsContext.playbackOptions().smoothnessPriority, true);
+optionsContext.selectProfile('smooth60');
+assert.equal(optionsContext.stops, stopsBeforeTarget + 1, 'Active smoothing applies FPS changes');
+console.log('PASS: Smoothness adaptation and FPS restarts apply only while smoothing is enabled');
 
 q.configure({...requested, key: 'fps15'});
 for (let i = 0; i < 8; i++)
