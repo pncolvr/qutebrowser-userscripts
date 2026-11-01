@@ -1870,7 +1870,8 @@ function installControlStyle() {
     #qute-motionflow-options[aria-expanded=true]::after {opacity:0}
     #qute-motionflow-options .mf-slider-knob {transform:translateX(0);transition:transform .18s ease-in-out}
     #qute-motionflow-options[aria-expanded=true] .mf-slider-knob {transform:translateX(var(--mf-slide))}
-    .mf-player > .mf-generic-controls {position:absolute;right:12px;bottom:12px;z-index:62;height:38px;display:flex;background:transparent;border-radius:8px}
+    .mf-player > .mf-generic-controls {position:absolute;right:12px;bottom:12px;z-index:62;height:38px;display:flex;background:transparent;border-radius:8px;opacity:0;pointer-events:none}
+    .mf-player > .mf-generic-controls[data-visible=true],.mf-player > .mf-generic-controls:focus-within {opacity:1;pointer-events:auto}
     .mf-generic-controls .mf-icon {filter:drop-shadow(0 1px 2px #000b)}
     #qute-motionflow-panel .mf-fps {display:flex;flex-wrap:wrap;gap:6px}
     #qute-motionflow-panel .mf-fps .mf-label {flex:none}
@@ -3111,6 +3112,7 @@ let smoothingButton = null, compareButton = null, diagnosticButton = null,
 let neuralEnabled = true, contentId = 'general';
 let profileId = 'smooth60', optionsOpen = false, comparison = false, comparisonSplit = .5;
 let panelInteractionUntil = 0, pointerStartedInMenu = false;
+let videoPointer = null;
 let state = {state: 'off'}, generation = 0, observedPlayer = null, adWatcher = null;
 let warmRestart = null, warmRestartTimer = 0;
 let nativeReturn = null, nativeReturnError = '';
@@ -3210,6 +3212,16 @@ function panelIsBusy() {
       panel.contains(focused) &&
       (focused.matches('input,select,textarea') || focused.matches(':focus-visible'));
 }
+function updateGenericControls() {
+  if (SITE === 'youtube' || !optionsButton || !element) return;
+  const bar = optionsButton.parentElement;
+  if (!bar?.classList.contains('mf-generic-controls')) return;
+  const rect = element.getBoundingClientRect(), margin = 32;
+  const near = videoPointer && rect.width > 0 && rect.height > 0 &&
+      videoPointer.x >= rect.left - margin && videoPointer.x <= rect.right + margin &&
+      videoPointer.y >= rect.top - margin && videoPointer.y <= rect.bottom + margin;
+  bar.dataset.visible = String(!!near || optionsOpen);
+}
 function paint() {
   if (!optionsButton) return;
   if (SITE === 'youtube' && owner?.matches('.ytp-autohide,.ytp-hide-controls') && !panelIsBusy())
@@ -3235,6 +3247,7 @@ function paint() {
   optionsButton.dataset.state = mode;
   optionsButton.dataset.enabled = String(enabled);
   optionsButton.setAttribute('aria-expanded', String(optionsOpen));
+  updateGenericControls();
   const info = panel.querySelector('#qute-motionflow-profile-info');
   const selectedOptions = playbackOptions(), stats = session?.stats || {};
   info.querySelector('.mf-delay').textContent = session?.completed ?
@@ -4162,6 +4175,20 @@ browser.addEventListener('pagehide', () => {
   halt();
 });
 browser.addEventListener('popstate', reconcile);
+if (SITE !== 'youtube') {
+  document.addEventListener('pointermove', event => {
+    videoPointer = event.pointerType === 'touch' ? null : {x: event.clientX, y: event.clientY};
+    updateGenericControls();
+  }, {capture: true, passive: true});
+  const clearPointer = () => {
+    videoPointer = null;
+    updateGenericControls();
+  };
+  document.addEventListener('pointerout', event => {
+    if (!event.relatedTarget) clearPointer();
+  }, true);
+  browser.addEventListener('blur', clearPointer);
+}
 for (const dismissEvent of ['pointerdown', 'click'])
   document.addEventListener(dismissEvent, event => {
     const path = event.composedPath();

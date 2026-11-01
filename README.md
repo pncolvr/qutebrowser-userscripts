@@ -302,6 +302,9 @@ typing and keys. Settings remain open while hovered, being edited, or navigated
 with the keyboard; an idle panel still dismisses with YouTube controls. The panel
 uses the browser top layer when supported to stay
 above player overlays, including in fullscreen.
+Outside YouTube, the settings button appears when the pointer is over or within
+32 pixels of the video, and stays visible while its menu is open or the button
+has keyboard focus.
 Status messages expire after four seconds; statistics remain visible only when
 explicitly enabled.
 
