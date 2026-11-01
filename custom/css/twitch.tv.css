@@ -32,3 +32,21 @@ nav.top-nav:has(a.tw-link:hover) ~ div div.side-nav {
 #root div.ekYTef > div.csHFVr {
     width: 100%!important;
 } */
+
+[data-a-target*="right-column__toggle"],
+button[aria-label="Collapse Chat"],
+button[aria-label="Expand Chat"] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 120ms ease;
+}
+
+[data-a-target*="right-column__toggle"][data-visible="true"],
+button[aria-label="Collapse Chat"][data-visible="true"],
+button[aria-label="Expand Chat"][data-visible="true"],
+[data-a-target*="right-column__toggle"]:focus-visible,
+button[aria-label="Collapse Chat"]:focus-visible,
+button[aria-label="Expand Chat"]:focus-visible {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}

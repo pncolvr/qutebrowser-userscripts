@@ -170,6 +170,37 @@ if (!process.argv.includes('--presenter-only')) {
   now = 1700;
   assert.equal(ui.busy(), false, 'Idle settings still auto-dismiss with native controls');
   console.log('PASS: Panel interaction protects edits while idle auto-dismiss remains available');
+
+  const controlBar = {
+    classList: {contains: name => name === 'mf-generic-controls'},
+    dataset: {}
+  };
+  const controlButton = {
+    parentElement: controlBar,
+    getBoundingClientRect: () => ({left: 300, top: 200, right: 324, bottom: 224, width: 24, height: 24})
+  };
+  const controlUi = {
+    SITE: 'generic',
+    optionsButton: controlButton,
+    element: {getBoundingClientRect: () => ({left: 0, top: 0, right: 1000, bottom: 600, width: 1000, height: 600})},
+    videoPointer: {x: 500, y: 300},
+    optionsOpen: false
+  };
+  const beginControls = main.indexOf('function updateGenericControls()');
+  vm.runInNewContext(
+      main.slice(beginControls, main.indexOf('function paint()', beginControls)) +
+          ';globalThis.update = updateGenericControls;',
+      controlUi);
+  controlUi.update();
+  assert.equal(controlBar.dataset.visible, 'false', 'Video hover alone does not reveal the toggle');
+  controlUi.videoPointer = {x: 268, y: 210};
+  controlUi.update();
+  assert.equal(controlBar.dataset.visible, 'true', 'Pointer within 32px of the toggle reveals it');
+  controlUi.videoPointer = {x: 500, y: 300};
+  controlUi.optionsOpen = true;
+  controlUi.update();
+  assert.equal(controlBar.dataset.visible, 'true', 'An open settings menu keeps the toggle visible');
+  console.log('PASS: MotionFlow toggle visibility follows the Twitch hover-distance rule');
 }
 
 async function checkPresenterRace() {

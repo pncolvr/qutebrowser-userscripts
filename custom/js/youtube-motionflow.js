@@ -3214,7 +3214,7 @@ function updateGenericControls() {
   if (SITE === 'youtube' || !optionsButton || !element) return;
   const bar = optionsButton.parentElement;
   if (!bar?.classList.contains('mf-generic-controls')) return;
-  const rect = element.getBoundingClientRect(), margin = 32;
+  const rect = optionsButton.getBoundingClientRect(), margin = 32;
   const near = videoPointer && rect.width > 0 && rect.height > 0 &&
       videoPointer.x >= rect.left - margin && videoPointer.x <= rect.right + margin &&
       videoPointer.y >= rect.top - margin && videoPointer.y <= rect.bottom + margin;
