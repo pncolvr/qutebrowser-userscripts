@@ -9,6 +9,7 @@ by name in `~/.local/share/qutebrowser/userscripts`.
 | `clean_url` / `select_urls` | Copy cleaned page/link URLs or selected saved tabs. |
 | `certificate` / `download` | Show the TLS certificate or download a video in Ghostty. |
 | `mono` / `unlockinsta` / `home` | Run page JavaScript actions. |
+| `unpaywall` | Run the soft-paywall unlock (`custom/js/soft-paywall.js`) on the current page. |
 | `darkreader` | Toggle Dark Reader for a domain. |
 | `motionflow-helper` | Set up, start, restart, stop or inspect the local MotionFlow GPU helper. |
 | `install-motionflow` | Install its user launcher and desktop entry; print the Hyprland startup line. |
@@ -501,6 +502,25 @@ repo. AI upscaling: [Real-ESRGAN / Xintao Wang et al.](https://github.com/xinnta
 (system pixel-conversion/resizing libraries). Upstream RIFE and vs-mlrt license
 notices are included under `lib/motionflow/licenses/` and copied beside the model.
 No third-party model/runtime binaries are checked into this repository.
+
+## Soft paywalls
+
+`custom/js/soft-paywall.js` undoes client-side paywalls that ship the full
+article and then cover it. It restores scrolling locked on `<html>`/`<body>`,
+including the `position: fixed` lock, and returns to the previous scroll
+position. It hides Zephr, Piano and Poool containers, and full-screen or
+bottom-pinned overlays that look like paywall prompts or empty backdrops. It
+also removes clipping, blur and fade masks from the article. On The Verge it
+also puts back article paragraphs that Zephr removes. On The Guardian it hides
+the Sourcepoint pay-or-consent dialog and the sign-in gate, and shows the
+paragraphs the gate hid.
+
+It runs automatically on the sites in its `@match` lines. Shape-detected
+overlays are left alone for 1.5 s after a click or key press, so menus and
+lightboxes you open stay up. On other pages, run `:spawn --userscript
+unpaywall`; it reports what it undid. To make a site automatic, add a `@match`
+line and run `apply_custom`. If the site needs its own selectors, also add a
+`SITES` entry.
 
 ## Layout
 

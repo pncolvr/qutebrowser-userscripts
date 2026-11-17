@@ -51,10 +51,12 @@ printf 'PASS: saved-tab selection keeps the Quickshell picker, URL cleanup and c
 # is captured by a fake tab; no browser window or website is used.
 ln -s -- "$script_root" "$test_dir/scripts with spaces"
 for action_root in "$script_root" "$test_dir/scripts with spaces"; do
-    for name in mono unlockinsta home; do
+    for name in mono unlockinsta home unpaywall; do
+        source="$action_root/js/$name.js"
+        [[ $name == unpaywall ]] && source="$action_root/custom/js/soft-paywall.js"
         : > "$QUTE_FIFO"
         "$action_root/$name"
-        python3 - "$QUTE_FIFO" "$action_root/js/$name.js" <<'PYTEST'
+        python3 - "$QUTE_FIFO" "$source" <<'PYTEST'
 import os
 import sys
 from pathlib import Path
@@ -74,7 +76,7 @@ with patch('qutebrowser.browser.commands.standarddir.data', return_value=os.envi
     parsed.cmd.handler(dispatcher, **options)
 assert loaded == [source.read_text()], 'jseval must load the relocated JavaScript'
 PYTEST
-        node --check "$action_root/js/$name.js"
+        node --check "$source"
     done
 done
 printf 'PASS: page actions load through qutebrowser, including paths containing spaces\n'

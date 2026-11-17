@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+script_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+: "${QUTE_FIFO:?Run this script from qutebrowser}"
+# Run the soft-paywall Greasemonkey script on demand for sites it doesn't match.
+# jseval keeps literal quotes in its final argument; emit the raw path.
+printf 'jseval -f %s\n' "$script_root/custom/js/soft-paywall.js" > "$QUTE_FIFO"
