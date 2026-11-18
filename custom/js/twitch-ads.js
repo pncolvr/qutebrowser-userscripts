@@ -13,6 +13,11 @@
 let audioBeforeAd = null
 let adBadge = null
 
+// Set by twitch-youtube-switch.js while the YouTube stream covers the player.
+function youtubeActive() {
+  return document.documentElement?.dataset?.quteYoutubeSwitch === "active"
+}
+
 function showAdBadge(visible) {
   if (!visible) {
     if (adBadge) adBadge.remove()
@@ -44,7 +49,7 @@ function antiAdd() {
     return
   }
   const isOpen = miniVideoparent && !miniVideoparent.className.includes("picture-by-picture-player--collapsed")
-  showAdBadge(Boolean(isOpen && audioBeforeAd))
+  showAdBadge(Boolean(isOpen && audioBeforeAd) && !youtubeActive())
   if (!isOpen) {
     if (audioBeforeAd) {
       mainVideo.volume = audioBeforeAd.volume
@@ -57,6 +62,13 @@ function antiAdd() {
   if (!miniVideo) return
   if (!audioBeforeAd) {
     audioBeforeAd = { muted: mainVideo.muted, volume: mainVideo.volume }
+  }
+  if (youtubeActive()) {
+    // Never play Twitch ad audio over the YouTube stream.
+    miniVideo.muted = true
+    mainVideo.muted = true
+    showAdBadge(false)
+    return
   }
   // Keep Twitch's video and control elements in their original DOM positions.
   miniVideo.volume = audioBeforeAd.volume

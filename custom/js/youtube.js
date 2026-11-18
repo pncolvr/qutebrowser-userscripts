@@ -11,7 +11,9 @@
 
 console.info('[YouTube] Enabled — cinema mode, timestamps and ad muting.');
 
-if (document.cookie.indexOf("wide=1") === -1) {
+// Only on youtube.com itself: inside an embed on another site the cookie is
+// third-party and never sticks, so the reload would loop forever.
+if (window.top === window && document.cookie.indexOf("wide=1") === -1) {
     document.cookie="wide=1;domain=.youtube.com"
     location.reload();
 }

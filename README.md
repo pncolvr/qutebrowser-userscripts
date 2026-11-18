@@ -15,6 +15,8 @@ by name in `~/.local/share/qutebrowser/userscripts`.
 | `install-motionflow` | Install its user launcher and desktop entry; print the Hyprland startup line. |
 | `apply_custom` | Restart the configured MotionFlow helper, install custom CSS/JavaScript, then reload Greasemonkey and the page. |
 | `cookie-cleaner.sh` | Interactively remove cookies from a closed browser profile. |
+| `custom/js/twitch-youtube-switch.js` | On Twitch, offer to switch the player to the streamer's simultaneous YouTube live stream. |
+| `custom/js/youtube-embed-to-link.js` | Play YouTube embeds on other sites via youtube-nocookie.com; show a link card if they fail. |
 | `to_mpv` | Play the current or hinted Twitch/YouTube URL in mpv with the existing window and chat integration. |
 | `qute-rbw` | Private rbw helper for the browser-owned `>bw` credential operation. |
 
@@ -42,6 +44,8 @@ bash tests/to_mpv.sh
 bash tests/readability-js.sh
 bash tests/userscripts.sh
 node tests/twitch-ads.cjs
+node tests/twitch-youtube.cjs
+node tests/youtube-embed.cjs
 ```
 
 The media checks mock desktop commands. Reader checks use private sample HTML
@@ -50,6 +54,56 @@ not play media, open browser tabs, or change window focus.
 
 Generated `/readability.html` is ignored by Git as a fallback for direct calls to
 the packaged readers. An already tracked copy must also be removed from the index.
+
+## YouTube embeds on other sites
+
+`custom/js/youtube-embed-to-link.js` points YouTube embeds (`youtube.com/embed/…`)
+on other sites at `youtube-nocookie.com`, so they play in place without your
+youtube.com session cookies (signed-in embeds can fail with *This video is
+unavailable*, error 152-4). If the player still reports an error, the embed is
+replaced with a **Watch on YouTube** card linking to the video, playlist or live
+channel. Embeds a page drives through YouTube's iframe API (`enablejsapi=1`) keep
+their URL so the page's own controls keep working; they become cards only on an
+error. Embedly-wrapped YouTube players always become cards.
+
+## Twitch → YouTube switch
+
+`custom/js/twitch-youtube-switch.js` checks whether the Twitch streamer you are
+watching is also live on YouTube. It never switches by itself: while a YouTube
+stream is live, a YouTube button appears in the
+player, just left of the MotionFlow button, with the same 32-pixel hover and focus
+visibility. Clicking it pauses and mutes Twitch and plays the YouTube stream in an
+embed over the Twitch player; chat is unchanged. While YouTube is shown, a
+**Back to Twitch** button sits near the player's top-right corner. It shows while
+the pointer is over the YouTube player or within 32 pixels of the button, or while
+it has keyboard focus, and hides otherwise (pointer moves inside the YouTube
+iframe do not reach the page, so hovering anywhere over it counts). Going back restores Twitch's mute, volume and
+playing state. If the YouTube stream ends or its embed fails, the player returns
+to Twitch automatically. Twitch ads stay muted while YouTube is shown.
+Setting `AUTO_SWITCH = true` at the top of the script makes it switch as soon as
+the YouTube stream is found; **Back to Twitch** then keeps Twitch for the rest of
+that channel visit.
+
+Detection needs the streamer's YouTube channel ID (`UC…`). It comes from:
+
+1. The `CHANNELS` map at the top of the script — add `twitchlogin: 'UC…'` for
+   streamers who link YouTube only by `@handle`. It starts empty. A handle's
+   channel ID is shown on YouTube under the channel's *About → Share channel →
+   Copy channel ID*.
+2. Otherwise, a `youtube.com/channel/UC…` link among the streamer's Twitch social
+   links or About panels (each panel's link and the links written in its text),
+   read from Twitch's API.
+3. Otherwise, links on the page below the video, rechecked every second as the
+   About section and panels render. Links inside chat are ignored.
+
+Lookups are cached in the page's `localStorage` (7 days when found, 1 day when
+not; the page check continues regardless). When a streamer links YouTube only as
+an `@handle`, the console shows a `[Twitch YouTube Switch]` hint naming it, so you
+can add its channel ID to `CHANNELS`.
+
+Live status is checked with a hidden, muted `youtube-nocookie.com` live embed for
+that channel, again every 2.5 minutes while the tab is visible. Streams that
+disable embedding never show the button. Run `>gr` to install it.
 
 ## Preview the Twitch ad badge
 
